@@ -1,4 +1,4 @@
-# Tasks — 005 Archived (Milestone M5)
+# Tasks — 005 Archived (Milestone 5)
 
 ## Requirement coverage
 
@@ -7,8 +7,8 @@
 | FR-012, US-006 | T13 |
 | NFR-006 | T13, T14 |
 
-Milestone M5 = phase P7 of [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec 001 (dataset +
-registry) and spec 002 (int8 artifact).
+This spec **is** Milestone 5 (archived) — see [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec
+001 (dataset + registry) and spec 002 (int8 artifact).
 
 ## Implementation readiness check
 

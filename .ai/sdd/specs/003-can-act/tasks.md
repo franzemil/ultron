@@ -1,4 +1,4 @@
-# Tasks — 003 Can Act (Milestone M3)
+# Tasks — 003 Can Act (Milestone 3)
 
 ## Requirement coverage
 
@@ -14,8 +14,8 @@
 | US-004 | T10b, T11 |
 | US-007 | T15 |
 
-Milestone M3 = phase P5 of [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec 001 (MFCC library)
-and spec 002 (model artifacts + T10a spike outcome).
+This spec **is** Milestone 3 (can act) — see [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec
+001 (MFCC library) and spec 002 (model artifacts + T10a spike outcome).
 
 ## Implementation readiness check
 

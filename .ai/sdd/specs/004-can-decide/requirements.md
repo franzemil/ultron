@@ -1,4 +1,4 @@
-# Requirements — 004 Can Decide (Milestone M4)
+# Requirements — 004 Can Decide (Milestone 4)
 
 > Part of the ultron system. Siblings: [001-can-hear](../001-can-hear/) (data pipeline + shared
 > system context), [002-can-think](../002-can-think/) (model artifacts),
@@ -8,7 +8,7 @@
 
 ## Overview
 
-M4 measures, honestly and repeatably, which candidate device ships: latency, memory, false
+Milestone 4 measures, honestly and repeatably, which candidate device ships: latency, memory, false
 accepts, per-command accuracy (including the known close pairs), output timing, and feedback
 timing — all parsed from device logs, no manual transcription. The result is a completed
 `docs/bench.md` table and a justified device decision.
@@ -62,7 +62,7 @@ A: Bench runs sequentially; only one device is listening at a time to avoid cros
 
 ## Success Metrics
 
-- **M4 "can decide"**: bench table complete; device winner declared with justification (US-005).
+- **Milestone 4 — "can decide"**: bench table complete; device winner declared with justification (US-005).
 
 ## Risks
 

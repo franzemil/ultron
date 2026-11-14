@@ -1,4 +1,4 @@
-# Requirements — 001 Can Hear (Milestone M1)
+# Requirements — 001 Can Hear (Milestone 1)
 
 > Part of the ultron system. Siblings: [002-can-think](../002-can-think/) (model + export),
 > [003-can-act](../003-can-act/) (devices + contracts), [004-can-decide](../004-can-decide/)
@@ -7,7 +7,7 @@
 
 ## Overview
 
-M1 builds ultron's **ears**: the local data pipeline. A uv-based CLI (`ultron`), dataset tooling
+Milestone 1 builds ultron's **ears**: the local data pipeline. A uv-based CLI (`ultron`), dataset tooling
 (ingest / validate / dcfix) with the owner-resolved command registry, WAV recorders for both
 candidate devices, seeded augmentation (+ optional synthetic data), and the shared C MFCC library
 proven frame-for-frame against the lampara-aliz Edge Impulse reference extraction.
@@ -105,7 +105,7 @@ loudly (no silent training on corrupt data — lampara lesson).
 
 ## Success Metrics
 
-- **M1 "can hear"**: both recorders + DSP parity green (NFR-007 DSP clause).
+- **Milestone 1 — "can hear"**: both recorders + DSP parity green (NFR-007 DSP clause).
 
 ## Risks
 

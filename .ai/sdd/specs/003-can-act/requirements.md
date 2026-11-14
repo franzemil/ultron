@@ -1,4 +1,4 @@
-# Requirements — 003 Can Act (Milestone M3)
+# Requirements — 003 Can Act (Milestone 3)
 
 > Part of the ultron system. Siblings: [001-can-hear](../001-can-hear/) (data pipeline + shared
 > system context — read it first), [002-can-think](../002-can-think/) (model artifacts),
@@ -7,7 +7,7 @@
 
 ## Overview
 
-M3 puts the loop on hardware: the XIAO ESP32S3 firmware (PDM capture, MFCC, TFLite-Micro, state
+Milestone 3 puts the loop on hardware: the XIAO ESP32S3 firmware (PDM capture, MFCC, TFLite-Micro, state
 machine, relay outputs) and the Orange Pi Zero 2W Python runtime implement the identical
 two-stage interaction — wake on **"hey ultron"** → "Escuchando" playback → 5 s command window →
 event or timeout — driving 9 relay channels (LM LB LA GD GI LPB LPA A CC) per the Actuation
@@ -153,7 +153,7 @@ budget (≤ 1.5 s XIAO / ≤ 1.0 s Pi).
 - Audio output (FR-018): XIAO — MAX98357A I2S DAC/amp + small speaker; Pi — USB audio dongle +
   powered speaker (owner-supplied). "Escuchando" is a repo-committed TTS clip; no runtime TTS.
 - Runtime capture mics as in the shared context (XIAO PDM, Pi USB mic).
-- Mics and speakers must be physically present before M3 work starts (PLAN.md hardware logistics).
+- Mics and speakers must be physically present before Milestone 3 work starts (PLAN.md hardware logistics).
 
 ## Decisions
 
@@ -193,7 +193,7 @@ playback end (FR-019, NFR-010). No other spoken feedback in v1.
 
 ## Success Metrics
 
-- **M3 "can act"**: both devices pass the two-stage interaction script end-to-end with correct
+- **Milestone 3 — "can act"**: both devices pass the two-stage interaction script end-to-end with correct
   output behaviors and feedback timing (FR-001…FR-009, FR-017…FR-019, NFR-010).
 
 ## Risks

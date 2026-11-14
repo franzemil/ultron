@@ -1,4 +1,4 @@
-# Design — 001 Can Hear (Milestone M1)
+# Design — 001 Can Hear (Milestone 1)
 
 ## Executive summary
 
@@ -22,7 +22,7 @@ reference.
 Root `pyproject.toml` (uv workspace, members `cli/` + `model/`), `cli/pyproject.toml` (package
 `ultron`, Typer), `model/pyproject.toml` (package `ultron-model`, workspace dependency of cli),
 config loader (`.env`, EI key), logging setup, pytest scaffold. The `model/` member ships empty in
-M1 — its code arrives with spec 002.
+Milestone 1 — its code arrives with spec 002.
 
 ## Data model
 

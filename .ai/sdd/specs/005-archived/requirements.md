@@ -1,4 +1,4 @@
-# Requirements — 005 Archived (Milestone M5)
+# Requirements — 005 Archived (Milestone 5)
 
 > Part of the ultron system. Siblings: [001-can-hear](../001-can-hear/) (data pipeline + shared
 > system context), [002-can-think](../002-can-think/) (model artifacts),
@@ -7,7 +7,7 @@
 
 ## Overview
 
-M5 closes the loop: one command uploads the dataset and the current model artifacts to a dedicated
+Milestone 5 closes the loop: one command uploads the dataset and the current model artifacts to a dedicated
 Edge Impulse project as a one-way archive, and the release bookkeeping lands (docs complete,
 CHANGELOG verified as PR-generated). Local artifacts are byte-identical before and after — the
 sync never downloads or overwrites anything (AGENTS rule 3).
@@ -52,7 +52,7 @@ A: A dedicated EI project for ultron (not the lampara project); `EI_KEY` and pro
 
 ## Success Metrics
 
-- **M5 "archived"**: EI sync verified one-way (FR-012); docs complete.
+- **Milestone 5 — "archived"**: EI sync verified one-way (FR-012); docs complete.
 
 ## Risks
 

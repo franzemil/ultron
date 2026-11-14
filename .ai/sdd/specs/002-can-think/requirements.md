@@ -1,4 +1,4 @@
-# Requirements — 002 Can Think (Milestone M2)
+# Requirements — 002 Can Think (Milestone 2)
 
 > Part of the ultron system. Siblings: [001-can-hear](../001-can-hear/) (data pipeline + shared
 > system context — read it first), [003-can-act](../003-can-act/) (devices + contracts),
@@ -7,11 +7,11 @@
 
 ## Overview
 
-M2 gives ultron its **brain**: the feature archive builder, PyTorch training with a threshold
+Milestone 2 gives ultron its **brain**: the feature archive builder, PyTorch training with a threshold
 sweep, and the ONNX → TFLite export producing the int8/float16 artifact pair with a hard parity
 gate. Everything runs locally and reproducibly; Edge Impulse is not involved (archive-only, spec
 005). The early TFLM firmware spike (T10a) runs here in parallel because it is the riskiest
-unknown and gates M3 planning.
+unknown and gates Milestone 3 planning.
 
 ## Goals
 
@@ -88,7 +88,7 @@ fallback: reshape Conv1d to Conv2d. If still blocked, STOP and ask — no archit
 
 ## Success Metrics
 
-- **M2 "can think"**: fresh-hold-out accuracy ≥ NFR-003 on the initial model; export parity ≥ 99%
+- **Milestone 2 — "can think"**: fresh-hold-out accuracy ≥ NFR-003 on the initial model; export parity ≥ 99%
   (NFR-007 export clause).
 
 ## Risks

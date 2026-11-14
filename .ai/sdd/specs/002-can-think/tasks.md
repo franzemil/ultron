@@ -1,4 +1,4 @@
-# Tasks — 002 Can Think (Milestone M2)
+# Tasks — 002 Can Think (Milestone 2)
 
 ## Requirement coverage
 
@@ -13,9 +13,9 @@
 | US-003 | T7, T8, T9 |
 | US-004 (artifact-parity clause; deployment is spec 003) | T9 |
 
-Milestone M2 = phases P3 + P4 of [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec 001 (dataset,
-registry, MFCC library). T10a is the firmware spike — it runs here, early and parallel, because
-its outcome gates M3 planning.
+This spec **is** Milestone 2 (can think) — see [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec
+001 (dataset, registry, MFCC library). T10a is the firmware spike — it runs here, early and
+parallel, because its outcome gates Milestone 3 planning.
 
 ## Implementation readiness check
 

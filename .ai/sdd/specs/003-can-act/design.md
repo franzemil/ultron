@@ -1,4 +1,4 @@
-# Design — 003 Can Act (Milestone M3)
+# Design — 003 Can Act (Milestone 3)
 
 ## Executive summary
 

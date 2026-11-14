@@ -1,4 +1,4 @@
-# Design — 004 Can Decide (Milestone M4)
+# Design — 004 Can Decide (Milestone 4)
 
 ## Executive summary
 

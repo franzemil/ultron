@@ -1,4 +1,4 @@
-# Tasks — 001 Can Hear (Milestone M1)
+# Tasks — 001 Can Hear (Milestone 1)
 
 ## Requirement coverage
 
@@ -10,8 +10,9 @@
 | NFR-007 (DSP clause) | T6 |
 | US-002 | T4 |
 
-Milestone M1 = phases P1 + P2 of [.ai/sdd/PLAN.md](../../PLAN.md). Sibling milestones: M2 → spec
-002, M3 → spec 003, M4 → spec 004, M5 → spec 005.
+This spec **is** Milestone 1 (can hear) — see [.ai/sdd/PLAN.md](../../PLAN.md). Siblings: spec 002
+(Milestone 2 — Can think), spec 003 (Milestone 3 — Can act), spec 004 (Milestone 4 — Can decide),
+spec 005 (Milestone 5 — Archived).
 
 ## Implementation readiness check
 

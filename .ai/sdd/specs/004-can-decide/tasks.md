@@ -1,4 +1,4 @@
-# Tasks — 004 Can Decide (Milestone M4)
+# Tasks — 004 Can Decide (Milestone 4)
 
 ## Requirement coverage
 
@@ -9,8 +9,8 @@
 | NFR-001, NFR-002, NFR-008 (bench clauses) | T12 |
 | US-005 | T12 |
 
-Milestone M4 = phase P6 of [.ai/sdd/PLAN.md](../../PLAN.md). Depends on spec 003 (both devices
-running the loop end-to-end).
+This spec **is** Milestone 4 (can decide) — see [.ai/sdd/PLAN.md](../../PLAN.md). Depends on
+spec 003 (both devices running the loop end-to-end).
 
 ## Implementation readiness check
 

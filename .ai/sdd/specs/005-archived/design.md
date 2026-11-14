@@ -1,4 +1,4 @@
-# Design — 005 Archived (Milestone M5)
+# Design — 005 Archived (Milestone 5)
 
 ## Executive summary
 

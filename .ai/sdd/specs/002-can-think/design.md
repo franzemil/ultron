@@ -1,9 +1,9 @@
-# Design — 002 Can Think (Milestone M2)
+# Design — 002 Can Think (Milestone 2)
 
 ## Executive summary
 
 One PyTorch keyword-spotting model — 13 classes (`wake`, `noise`, and the 11 command classes
-`lm lb la gd gi p cp lpb lpa a cc`) — is trained on the M1 feature archive with class weights and
+`lm lb la gd gi p cp lpb lpa a cc`) — is trained on the Milestone 1 feature archive with class weights and
 early stopping, its operating point chosen by a threshold sweep against the fresh hold-out, then
 exported once via ONNX → onnx2tf to a full-int8 TFLite (MCU) and a float16-or-int8 TFLite (Pi)
 with a parity report that fails the build below 99% argmax agreement.
