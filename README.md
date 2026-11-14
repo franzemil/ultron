@@ -14,8 +14,8 @@ locally with **PyTorch as source of truth**, Edge Impulse is export-only.
 | Artifact | Where |
 |---|---|
 | Product plan | [.ai/sdd/PLAN.md](.ai/sdd/PLAN.md) |
-| Feature spec 001 | [.ai/sdd/specs/001-ultron-car-manager/](.ai/sdd/specs/001-ultron-car-manager/) |
-| Gate status | [.ai/sdd/specs/001-ultron-car-manager/.status](.ai/sdd/specs/001-ultron-car-manager/.status) |
+| Milestone specs 001–005 | [.ai/sdd/specs/](.ai/sdd/specs/) — dashboard: [INDEX.md](.ai/sdd/INDEX.md) |
+| Gate status | per-spec `.status` files (see INDEX) |
 
 Method: [Spec-Driven Development](https://github.com/felipefontoura/spec-driven-development-book/blob/main/BOOK.en.md).
 No implementation code is written until the spec's `.status` reads `tasks:approved`.

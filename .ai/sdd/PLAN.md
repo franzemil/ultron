@@ -1,39 +1,38 @@
 # Ultron — Product Plan
 
-Medium project: one spec folder per major feature. Phases below sequence the work; every phase
-ends at a gate (`.status`) before the next begins.
+Medium project: one spec folder per milestone. Milestones below sequence the work; every
+milestone ends at a gate (`.status`) before the next begins. Governance (steering docs, specs
+drafted and approved) gates every milestone start.
 
 ## Feature map
 
-| # | Feature | Spec |
+| # | Feature (milestone) | Spec |
 |---|---|---|
-| 001 | Ultron Car Manager — voice wake + command pipeline, two targets, bench, EI sync | `specs/001-ultron-car-manager/` |
+| 001 | Can Hear — CLI, dataset tooling, recorders, MFCC parity (Milestone 1) | `specs/001-can-hear/` |
+| 002 | Can Think — features, training, TFLite export + parity gate (Milestone 2) | `specs/002-can-think/` |
+| 003 | Can Act — firmware + Pi runtime, relays, "Escuchando" feedback (Milestone 3) | `specs/003-can-act/` |
+| 004 | Can Decide — benchmark + device decision (Milestone 4) | `specs/004-can-decide/` |
+| 005 | Archived — EI one-way sync, docs + release (Milestone 5) | `specs/005-archived/` |
 
-All v1 scope lives in spec 001. Later features (WiFi control, multi-device, speaker enrollment)
-get their own spec folders.
+Later features (WiFi control, multi-device, speaker enrollment) get their own spec folders.
+Shared system context (constraints, D-decisions, global rules) lives in spec 001.
 
-## Phases (spec 001)
+## Milestones (the plan)
 
-| Phase | Goal | Exit criterion |
-|---|---|---|
-| P0 | Governance: steering docs, spec 001 drafted and approved | `.status` = `tasks:approved` |
-| P1 | Data tooling: CLI scaffold, dataset ingest/validate/dcfix, recorders (XIAO + Pi), augmentation | `ultron dataset validate` green on ≥ 30 originals/label |
-| P2 | DSP: shared C MFCC + bindings + parity vectors vs EI reference | Per-frame parity test passes (max abs diff ≤ 1e-3) |
-| P3 | Model: feature npz builder, PyTorch training, threshold sweep | Fresh-hold-out metrics meet NFR-003 |
-| P4 | Export: ONNX → onnx2tf → TFLite int8/float16 + parity report | NFR-007 parity ≥ 99% argmax agreement |
-| P5 | Firmware + Pi runtime: state machine, events, actuation | Both devices emit contract events end-to-end |
-| P6 | Bench: latency, RAM, false-accepts, confusion, device decision | `docs/bench.md` table complete, winner chosen |
-| P7 | Archive: `ultron ei sync`, final docs | Sync verified one-way; docs complete |
+| Milestone | Goal | Exit criterion | Spec |
+|---|---|---|---|
+| **Milestone 1 — "can hear"** | Data tooling: CLI scaffold, dataset ingest/validate/dcfix, recorders (XIAO + Pi), augmentation; DSP: shared C MFCC + bindings + parity vectors vs EI reference | `ultron dataset validate` green on ≥ 30 originals/label; per-frame parity test passes (max abs diff ≤ 1e-3) | 001 |
+| **Milestone 2 — "can think"** | Model: feature npz builder, PyTorch training, threshold sweep; Export: ONNX → onnx2tf → TFLite int8/float16 + parity report | Fresh-hold-out metrics meet NFR-003; NFR-007 parity ≥ 99% argmax agreement | 002 |
+| **Milestone 3 — "can act"** | Firmware + Pi runtime: state machine, events, actuation, "Escuchando" wake feedback | Both devices emit contract events end-to-end; feedback timing meets NFR-010 | 003 |
+| **Milestone 4 — "can decide"** | Bench: latency, RAM, false-accepts, confusion, device decision | `docs/bench.md` table complete, winner chosen | 004 |
+| **Milestone 5 — "archived"** | Archive: `ultron ei sync`, final docs | Sync verified one-way; docs complete | 005 |
 
 ## Dependencies
 
-P1 → P2 → P3 → P4 → P5 → P6 → P7. The firmware TFLM spike (T10a) runs **early and parallel** to
-P3/P4 because it is the riskiest unknown (Arduino TFLM library availability).
+Milestone 1 → 2 → 3 → 4 → 5. The firmware TFLM spike (T10a, spec 002) runs **early and
+parallel** inside Milestone 2 because it is the riskiest unknown (Arduino TFLM library
+availability) and its outcome gates Milestone 3 planning.
 
-## Milestones
-
-- **M1 "can hear"**: recorders + DSP parity (P1+P2)
-- **M2 "can think"**: trained + exported + parity-proven model (P3+P4)
-- **M3 "can act"**: both devices run the two-stage loop end-to-end (P5)
-- **M4 "can decide"**: benchmark table, device winner (P6)
-- **M5 "archived"**: EI sync + docs (P7)
+**Hardware logistics**: the Pi USB microphone must be on hand before Milestone 1's recording
+runs; the MAX98357A I2S amp + speaker (XIAO) and the USB audio dongle + powered speaker (Pi)
+must be on hand before Milestone 3 (T15, "Escuchando").
