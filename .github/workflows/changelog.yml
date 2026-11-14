@@ -1,0 +1,75 @@
+name: Changelog
+
+# Appends one bullet per merged PR to CHANGELOG.md and commits it as changelog-bot.
+# PR titles must be conventional — see .agents/skills/conventional-commits/SKILL.md.
+# Requires repo setting: Actions → General → Workflow permissions = "Read and write"
+# (or a PAT secret if main is branch-protected).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: changelog
+  cancel-in-progress: false
+
+jobs:
+  append-changelog:
+    runs-on: ubuntu-latest
+    # Loop protection: never react to the bot's own commits
+    if: >-
+      github.event.head_commit == null ||
+      !contains(github.event.head_commit.message, '[skip changelog]')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect merged PRs since last changelog commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          LAST=$(git log --grep='\[skip changelog\]' --format=%ct -1 || true)
+          LAST=${LAST:-0}
+          echo "Last changelog-bot commit epoch: ${LAST}"
+
+          gh pr list --repo "$REPO" --state merged --limit 50 \
+            --json number,title,mergedAt,author \
+            --jq '.[] | [.number, .title, .mergedAt, .author.login] | @tsv' \
+            > /tmp/prs.tsv
+
+          TODAY=$(date -u +%Y-%m-%d)
+          printf '\n## %s\n' "$TODAY" > /tmp/section.md
+          COUNT=0
+          while IFS=$'\t' read -r num title merged author; do
+            [ -n "${num}" ] || continue
+            ts=$(date -d "${merged}" +%s)
+            if [ "${ts}" -gt "${LAST}" ]; then
+              printf -- '- %s (#%s) — @%s\n' "${title}" "${num}" "${author}" >> /tmp/section.md
+              COUNT=$((COUNT + 1))
+            fi
+          done < /tmp/prs.tsv
+          echo "PRs to append: ${COUNT}"
+
+      - name: Insert section into CHANGELOG.md
+        run: python3 .github/scripts/append_changelog.py /tmp/section.md
+
+      - name: Commit and push
+        run: |
+          git config user.name "changelog-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git commit -m "docs(changelog): update [skip changelog]"
+          git push
