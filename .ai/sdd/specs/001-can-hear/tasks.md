@@ -16,10 +16,10 @@ spec 005 (Milestone 5 — Archived).
 
 ## Implementation readiness check
 
-- [ ] `.status` reads `requirements:approved` (currently `requirements:draft`)
-- [ ] `.status` reads `design:approved`
-- [ ] `.status` reads `tasks:approved` — **gates all implementation work**
-- [ ] No open questions remain in requirements.md (none today — Q-003/Q-007 resolved)
+- [x] `.status` reads `requirements:approved` ✅ (owner-approved)
+- [x] `.status` reads `design:approved` ✅ (owner-approved)
+- [ ] `.status` reads `tasks:approved` — **gates all implementation work** (currently `design:approved`)
+- [x] No open questions remain in requirements.md (Q-003/Q-007 resolved)
 
 Implementation must be executed in dependency order; each task is verified by its own acceptance
 criteria before the next begins.
