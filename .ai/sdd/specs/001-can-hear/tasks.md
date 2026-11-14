@@ -72,8 +72,8 @@ criteria before the next begins.
 
 ### T5 — Seeded augmentation (2 h)
 - Covers: NFR-005. Deps: T3. Priority: Must.
-- Checklist: 4 ffmpeg variants per original (gain 0.7–1.3, tempo 0.92–1.08, pitch ±6%,
-  background mix, occasional echo) — lampara-aliz recipe, seeded; deterministic filenames.
+- [x] Checklist: 4 ffmpeg variants per original (gain 0.7–1.3, tempo 0.92–1.08, pitch ±6%,
+  background mix, occasional echo) — lampara-aliz recipe, seeded; deterministic filenames. ✅
 - Likely files: `cli/src/ultron/augment.py`, `tests/test_augment.py`.
 - Verify: same seed ⇒ byte-identical plan; `augment plan` lists targets before writing.
 
