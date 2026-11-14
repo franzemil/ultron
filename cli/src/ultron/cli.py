@@ -1,25 +1,27 @@
 """Ultron command-line interface.
 
 Spanish voice-actuation car manager: ``hey ultron`` wake word, then a command
-phrase drives 9 relay channels. This skeleton wires up Typer, logging and the
-configuration loader; real commands land in later tickets.
+phrase drives 9 relay channels. Includes seeded ffmpeg augmentation (T5).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import questionary
 import typer
 from rich.console import Console
-console = Console()
 
+from .augment import AUGMENTED_DIR, DATASET_ROOT, ORIGINALS_DIR, plan_augmentations, run_plan
 from .config import config
 from .logging import logger, setup_logging
 from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
+
+console = Console()
 
 app = typer.Typer(
     name="ultron",
@@ -32,9 +34,59 @@ dataset = typer.Typer(
     help="Dataset tooling: ingest, validate, dcfix.",
 )
 app.add_typer(dataset, name="dataset")
+
+augment = typer.Typer(
+    name="augment",
+    help="Seeded ffmpeg augmentation (T5).",
+)
+app.add_typer(augment, name="augment")
+
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
+
+
+@augment.command("plan")
+def augment_plan(
+    seed: int = typer.Option(42, "--seed", "-s", help="RNG seed (deterministic plan)."),
+    dataset: Path = typer.Option(DATASET_ROOT, "--dataset", "-d", help="Dataset root."),
+) -> None:
+    """List augmentation targets before writing anything (dry-run by design)."""
+    targets = plan_augmentations(seed=seed, dataset_root=dataset)
+    if not targets:
+        typer.secho(
+            f"no originals found under {dataset / 'originals'} — nothing to plan.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+    typer.echo(f"augment plan (seed={seed}): {len(targets)} target(s)")
+    for t in targets:
+        typer.echo(t.plan_line())
+
+
+@augment.command("run")
+def augment_run(
+    seed: int = typer.Option(42, "--seed", "-s", help="RNG seed (deterministic plan)."),
+    dataset: Path = typer.Option(DATASET_ROOT, "--dataset", "-d", help="Dataset root."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List targets without invoking ffmpeg.",
+    ),
+) -> None:
+    """Execute the augmentation plan (writes augmented/<label>/aug_*.wav)."""
+    targets = plan_augmentations(seed=seed, dataset_root=dataset)
+    if not targets:
+        typer.secho(
+            f"no originals found under {dataset / 'originals'} — nothing to run.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(code=0)
+    messages = run_plan(targets, dry_run=dry_run)
+    for m in messages:
+        typer.echo(m)
+    if dry_run:
+        typer.secho("dry-run complete: nothing was written.", fg=typer.colors.YELLOW)
+    else:
+        typer.secho(f"augment run complete: {len(targets)} target(s).", fg=typer.colors.GREEN)
 
 
 def _pick_label(registry: dict) -> str:
@@ -77,39 +129,29 @@ def record_split_command(
     Records --seconds of audio as a take, runs Silero VAD on it, and
     writes each speech segment as {label}_local_<nn>.wav under
     dataset/originals/<label>/. Single label per take; no STT needed.
-
     If --label is omitted, an interactive prompt lets you pick from the
     registry codes (with Spanish phrases).
     """
-    from pathlib import Path
-
-    from ultron.dataset import REGISTRY_IDS
-
+    from pathlib import Path as _Path
+    from ultron.dataset import REGISTRY_IDS as _REGISTRY_IDS
     registry = _registry()
-
     if label is None:
         label = _pick_label(registry)
-
-    if label not in set(REGISTRY_IDS):
+    if label not in set(_REGISTRY_IDS):
         console.print(f"[red]Unknown label '{label}'.[/red]")
-        console.print(f"Valid codes: {', '.join(sorted(REGISTRY_IDS))}")
+        console.print(f"Valid codes: {', '.join(sorted(_REGISTRY_IDS))}")
         raise typer.Exit(code=2)
-
-    takes_dir = Path(out_dir) / "takes"
+    takes_dir = _Path(out_dir) / "takes"
     take_path = record_long_command(
         seconds=seconds, label=label, device=device, out_dir=str(takes_dir)
     )
     take_path = str(take_path)
-
     console.print()
     split_command(
         take=str(take_path),
         label=label,
         out_dir=out_dir,
     )
-
-
-__all__ = ["main"]
 
 
 @dataset.command(name="ingest")
