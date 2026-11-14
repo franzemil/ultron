@@ -27,12 +27,20 @@ Milestone 1 — its code arrives with spec 002.
 ## Data model
 
 ```
-dataset/                          # gitignored
-  originals/<label>/*.wav         # {label}_{nn}.wav — real recordings (16k/16-bit/mono)
-  augmented/<label>/aug_*.wav     # 4 seeded ffmpeg variants per original
-  holdout/<label>/*.wav           # fresh recordings, NEVER trained on (NFR-003)
+dataset/                          # gitignored — the tree IS the labeling; no manifest JSON
+  originals/<label>/*.wav         # {label}_{nn}.wav — real recordings; filename tags the mic (xiao / ext)
+  augmented/<label>/aug_*.wav     # 4 seeded ffmpeg variants per original (deterministic)
+  holdout/<label>/*.wav           # fresh recordings, NEVER trained on (NFR-003) — isolation is structural
 build/features.npz                  # float32 features + labels + file paths (cache, spec 002)
 ```
+
+Why a folder tree instead of a manifest JSON: recordings arrive in bulk (SD-card pulls, batch
+clips split per utterance), so per-file labeling must come from the tree itself; `dataset
+validate` derives truth by walking the filesystem — it cannot disagree with what is on disk;
+`holdout/` isolation is enforced by *location*, never by a flag that could silently leak data
+into training; and `dataset/` is gitignored, so a manifest could never stay in sync across
+machines. JSON is reserved for versioned semantics (`registry.json` below) and computed caches
+(`features.npz`).
 
 `model/registry.json` (versioned; D-005) — owner-resolved registry (Q-001), built and validated
 by T3:
