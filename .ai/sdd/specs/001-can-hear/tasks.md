@@ -18,7 +18,7 @@ spec 005 (Milestone 5 — Archived).
 
 - [x] `.status` reads `requirements:approved` ✅ (owner-approved)
 - [x] `.status` reads `design:approved` ✅ (owner-approved)
-- [ ] `.status` reads `tasks:approved` — **gates all implementation work** (currently `design:approved`)
+- [x] `.status` reads `tasks:approved` — **gates all implementation work** ✅ (owner-approved 2026-11-14)
 - [x] No open questions remain in requirements.md (Q-003/Q-007 resolved)
 
 Implementation must be executed in dependency order; each task is verified by its own acceptance
