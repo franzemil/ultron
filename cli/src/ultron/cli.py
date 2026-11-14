@@ -11,6 +11,7 @@ import typer
 
 from .config import config
 from .logging import logger, setup_logging
+from ultron.dataset import ingest, validate, dcfix
 
 app = typer.Typer(
     name="ultron",
@@ -18,13 +19,52 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+dataset = typer.Typer(
+    name="dataset",
+    help="Dataset tooling: ingest, validate, dcfix.",
+)
+app.add_typer(dataset, name="dataset")
 
-@app.command()
-def version() -> None:
-    """Show the ultron version."""
-    from ultron import __version__
 
-    typer.echo(f"ultron {__version__}")
+@dataset.command(name="ingest")
+def dataset_ingest(
+    source: str = typer.Argument(..., help="Source directory containing WAV files to ingest."),
+    label: str = typer.Argument(..., help="Action label slug (e.g. lm, lb, gd, wake, noise)."),
+    mic: str = typer.Option(
+        "ext",
+        "--mic",
+        "-m",
+        help="Mic source tag: xiao (XIAO PDM), pi (Pi USB mic), or ext (owner-supplied external).",
+    ),
+    dest: str = typer.Option(
+        "dataset/originals",
+        "--dest",
+        "-d",
+        help="Destination dataset directory (defaults to dataset/originals/<label>).",
+    ),
+) -> None:
+    """Copy and label WAVs from ANY source (device or owner-supplied external recordings)."""
+    ingest(source=source, label=label, mic=mic, dest=dest)
+
+
+@dataset.command(name="validate")
+def dataset_validate(
+    path: str = typer.Argument(
+        "dataset", help="Dataset directory to validate (defaults to dataset/)."
+    )
+) -> None:
+    """Check every clip is 16 kHz / 16-bit / mono; exit non-zero listing each failing file."""
+    raise typer.Exit(code=validate(path=path))
+
+
+@dataset.command(name="dcfix")
+def dataset_dcfix(
+    path: str = typer.Argument(
+        "dataset", help="Dataset directory of WAVs to DC-offset-correct in place."
+    )
+) -> None:
+    """Remove DC offset from every WAV under <path> (recenter waveform around zero)."""
+    dcfix(path=path)
 
 
 @app.command(name="config")
