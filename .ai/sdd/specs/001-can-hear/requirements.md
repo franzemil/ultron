@@ -69,15 +69,19 @@ cancel command (CP), plus one wake class and noise — v1 hard cap: 13 model cla
 
 **FR-020 (Must)** — WHEN `dataset ingest` runs, THE SYSTEM SHALL copy and label WAVs from ANY
 source — device recordings **and** owner-supplied external recordings (e.g. phone/PC) — tagging
-the mic source in the filename (`lm_xiao_01.wav` / `lm_ext_01.wav`). *(Promoted from T3's
-checklist in the milestone split.)*
+the mic source in the filename (`lm_xiao_01.wav` / `lm_ext_01.wav`).
 
 **FR-021 (Must)** — WHEN `dataset validate` runs, THE SYSTEM SHALL check every clip is
-16 kHz/16-bit/mono and exit non-zero listing each failing file. *(Promoted from T3.)*
+16 kHz/16-bit/mono and exit non-zero listing each failing file.
 
 **FR-022 (Must)** — WHEN features are computed, THE SYSTEM SHALL use DC-offset-corrected clips
 (`dataset dcfix`); any NaN feature row SHALL fail the pipeline loudly — no silent training on
-corrupt data (Q-007, lampara lesson). *(Promoted from T3/T7.)*
+corrupt data (Q-007, lampara lesson).
+
+> **DC offset, in plain language:** a microphone can add a constant voltage to every sample it
+> records, shifting the whole waveform up or down away from zero. `dataset dcfix` subtracts that
+> constant so the recording is recentered before feature extraction — otherwise every MFCC
+> feature is computed on a skewed signal.
 
 ## Non-Functional Requirements
 

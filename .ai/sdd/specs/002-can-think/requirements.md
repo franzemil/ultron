@@ -10,7 +10,7 @@
 Milestone 2 gives ultron its **brain**: the feature archive builder, PyTorch training with a threshold
 sweep, and the ONNX → TFLite export producing the int8/float16 artifact pair with a hard parity
 gate. Everything runs locally and reproducibly; Edge Impulse is not involved (archive-only, spec
-005). The early TFLM firmware spike (T10a) runs here in parallel because it is the riskiest
+005). The early TFLM firmware spike runs here in parallel because it is the riskiest
 unknown and gates Milestone 3 planning.
 
 ## Goals

@@ -198,7 +198,7 @@ playback end (FR-019, NFR-010). No other spoken feedback in v1.
 
 ## Risks
 
-- **Arduino TFLM library availability/staleness**: the early spike (T10a, spec 002) is the
+- **Arduino TFLM library availability/staleness**: the early spike in spec 002 is the
   canary; documented fallback is vendoring `esp-tflite-micro`.
 - **Self-hearing** (the speaker's own clip reaching the mic and skewing scores): windows
   overlapping playback are excluded from decisions (FR-019); the bench (spec 004) runs wake
