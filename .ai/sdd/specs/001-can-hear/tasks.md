@@ -60,9 +60,9 @@ criteria before the next begins.
 - Verify: `uv run ultron dataset validate` fails loudly on a corrupt fixture and passes a valid
   one.
 
-### T4 — Recorders for both devices (4 h)
+### T4 — Recorders for both devices (4 h) ✅
 - Covers: US-002, NFR-005. Deps: T2. Priority: Must.
-- Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
+- [x] Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
   Pi recorder script (`devices/orangepi/record.py`, sounddevice, 16 k/16-bit/mono, label arg);
   docs.
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
