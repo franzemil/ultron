@@ -9,5 +9,8 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-14
+- spec: approve tasks gate (001-can-hear) (#5) — @franzemil
+
+## 2026-11-14
 - Define spec (#4) — @franzemil
 
