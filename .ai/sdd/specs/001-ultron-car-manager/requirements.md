@@ -14,7 +14,7 @@ receives the dataset and model as an archive — one-way.
 
 ## Goals
 
-1. Reliable two-stage interaction: wake phrase → 5 s command window → event (or timeout).
+1. Reliable two-stage interaction: wake phrase → audible "Escuchando" confirmation → 5 s command window → event (or timeout).
 2. One training pipeline (PyTorch → TFLite) producing artifacts for both targets from a single
    checkpoint, with proven train-vs-device numerical parity.
 3. An honest, repeatable benchmark comparing both devices (latency, memory, false accepts,
@@ -97,6 +97,18 @@ receives the dataset and model as an archive — one-way.
 - **AC1:** `ultron ei sync` uploads dataset + model artifacts to the configured EI project.
 - **AC2:** Local files are byte-identical before and after the sync (one-way).
 
+### US-007 — Audible wake confirmation
+**As a** device owner
+**I want to** hear the device say "Escuchando" right after "hey ultron" is accepted
+**so that** I know the wake word was recognized and can speak the command immediately.
+
+**Acceptance criteria:**
+- **AC1:** An accepted "hey ultron" plays the fixed "Escuchando" clip through the speaker,
+  identically on XIAO and Pi (same asset, same trigger, same timing).
+- **AC2:** The 5 s command window starts when playback ends; a command spoken right after the
+  clip is accepted (US-001 AC1 still passes end-to-end with playback on).
+- **AC3:** No audio plays while in wake-listening — below-threshold scores stay silent (FR-006).
+
 ## Functional Requirements (EARS, MoSCoW)
 
 **FR-001 (Must)** — WHEN a wake phrase scores ≥ wake threshold on the wake stage,
@@ -153,6 +165,17 @@ cancel command (CP), plus one wake class and noise — v1 hard cap: 13 model cla
 **FR-017 (Must)** — WHEN a CP ("cancelar parqueo") command event is emitted AND parqueo is
 active, THE SYSTEM SHALL stop the GD and GI blinking and leave both outputs OFF. IF parqueo is
 not active, THE SYSTEM SHALL treat CP as a no-op.
+
+**FR-018 (Must)** — WHEN a wake phrase is accepted, THE SYSTEM SHALL play the fixed
+"Escuchando" confirmation clip through a speaker. The clip is a pre-rendered Spanish-TTS WAV
+(16 kHz / 16-bit / mono, ≤ 500 ms) committed to the repo and byte-identical on both targets;
+no target performs runtime speech synthesis.
+
+**FR-019 (Must)** — THE SYSTEM SHALL keep wake feedback identical on both targets: same asset,
+same trigger (wake acceptance — the edge that emits `WAKE`), same timing — playback starts
+≤ 200 ms after acceptance and the 5 s command window (FR-002) starts when playback ends, with
+the whole chain inside FR-001's entry budget. Audio frames captured during playback SHALL NOT
+contribute to classification decisions.
 
 ## Actuation Behavior Contract
 
@@ -211,6 +234,10 @@ debug level; bench produces a markdown table in `docs/bench.md`.
 only ever pulses ≤ 2 s and only from a fresh wake → command sequence; no channel ever toggles
 without a command event.
 
+**NFR-010 (Feedback latency)** — "Escuchando" playback starts ≤ 200 ms after wake acceptance and
+lasts ≤ 500 ms on both targets; end-of-utterance → command-listening stays within FR-001's
+budget (≤ 1.5 s XIAO / ≤ 1.0 s Pi).
+
 ## Constraints
 
 - Wake phrase is fixed: **"hey ultron"**. Command registry is owner-defined and resolved (Q-001):
@@ -222,6 +249,8 @@ without a command event.
   recognized, ever.
 - Primary speaker: the owner. Primary room: the deployment room.
 - XIAO mic: built-in PDM. Pi mic: owner-supplied USB microphone.
+- Audio output (FR-018): XIAO — MAX98357A I2S DAC/amp + small speaker; Pi — USB audio dongle +
+  powered speaker (owner-supplied). "Escuchando" is a repo-committed TTS clip; no runtime TTS.
 - Dev host: macOS arm64; Pi OS: Debian 12 aarch64.
 - Edge Impulse account and API key already available (from lampara-aliz workflow).
 
@@ -238,6 +267,11 @@ without a command event.
   miss.)*
 - **D-005** — Command registry lives in a versioned config file (`model/registry.json`) with
   stable IDs; phrase edits are registry changes per FR-013.
+
+- **D-006** — Wake acceptance is confirmed audibly with a fixed pre-rendered TTS clip
+  ("Escuchando"), the same asset on both targets; no runtime TTS anywhere. *(Owner requested
+  spoken confirmation; an MCU can only speak from a bundled clip, and Pi-only synthesis would
+  diverge behavior — AGENTS rule 5.)*
 
 ## Implementation FAQ
 
@@ -289,12 +323,18 @@ A: Default until owner confirms: LPB/LPA are mutually exclusive — selecting on
 selecting the other switches speed; CP stops both wipers as well as parqueo. If the owner wants
 wipers to run a fixed time instead, this contract changes before approval.
 
+**Q-012: How does the device say "Escuchando"?**
+A: **Resolved.** One Spanish-TTS WAV (16 kHz/16-bit/mono, ≤ 500 ms, silence-trimmed) committed
+to the repo; both targets play it: XIAO streams it via I2S to a MAX98357A amp + speaker, the Pi
+plays it through a USB audio dongle. Trigger = wake acceptance; the 5 s command window starts at
+playback end (FR-019, NFR-010). No other spoken feedback in v1.
+
 ## Success Metrics
 
 - M1: both recorders + DSP parity green (NFR-007 DSP clause).
 - M2: fresh-hold-out accuracy ≥ NFR-003 on the initial model.
 - M3: both devices pass the two-stage interaction script end-to-end with correct output
-  behaviors (FR-001…FR-017).
+  behaviors (FR-001…FR-019).
 - M4: bench table complete; device winner declared with justification (US-005).
 - M5: EI sync verified one-way (FR-012); docs complete.
 
@@ -308,10 +348,15 @@ wipers to run a fixed time instead, this contract changes before approval.
 - **Single-speaker overfit**: honest fresh-hold-out reporting; more recordings remain the lever.
 - **Close-pair confusion** (luz media/baja/alta; guiñador derecho/izquierdo): measured explicitly
   in the bench; mitigation order per Q-002.
+- **Self-hearing** (the speaker's own clip reaching the mic and skewing scores): windows
+  overlapping playback are excluded from decisions (FR-019); the bench runs wake sequences with
+  the speaker live.
+- **False-wake chatter**: a false wake now speaks. Bounded by NFR-004 (≤ 1 false wake / 30 min);
+  the bench's false-accept run counts them with playback enabled.
 
 ## Confirm before building
 
 No implementation code until `.status` reads `tasks:approved`. Before starting implementation the
-implementing agent restates FR-001–FR-017, the Actuation Behavior Contract, the event contract,
-and D-004 in its own words. If Q-011 (wiper stop) or any acceptance criterion is ambiguous, ask
-before implementing.
+implementing agent restates FR-001–FR-019, the Actuation Behavior Contract, the event contract,
+and D-004/D-006 in its own words. If Q-011 (wiper stop) or any acceptance criterion is ambiguous,
+ask before implementing.

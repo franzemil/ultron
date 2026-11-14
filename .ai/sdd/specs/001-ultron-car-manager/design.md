@@ -4,7 +4,8 @@
 
 One PyTorch keyword-spotting model (13 classes: `wake`, `noise`, and 11 command classes
 `lm lb la gd gi p cp lpb lpa a cc`) exported once to TFLite (int8 MCU / float16-or-int8 Pi)
-drives an identical two-stage state machine (wake → 5 s command window → event/timeout) plus an
+drives an identical two-stage state machine (wake → "Escuchando" playback → 5 s command window →
+event/timeout) plus an
 output controller with 9 relay channels (LM LB LA GD GI LPB LPA A CC) on both a XIAO ESP32S3
 Sense and an Orange Pi Zero 2W; a shared C MFCC library guarantees train-vs-device feature
 parity, and a benchmark protocol selects the shipping device.
@@ -25,6 +26,7 @@ parity, and a benchmark protocol selects the shipping device.
 | FR-017 | [Output controller](#output-controller) (CP cancel) |
 | FR-014 | [Benchmark protocol](#benchmark-protocol) |
 | FR-016 | [Data model](#data-model) (registry cap) |
+| FR-018, FR-019, NFR-010 | [Audio feedback](#audio-feedback), [State machine](#state-machine) |
 | NFR-001, NFR-002 | [Technical decisions](#technical-decisions) TD-006, [Memory budget](#memory-budget) |
 | NFR-003, NFR-005 | [Data model](#data-model), [Verification strategy](#verification-strategy) |
 | NFR-006 | [Conventions](../../../.ai/steering/conventions.md) (seeds, changelog) |
@@ -40,22 +42,25 @@ flowchart TB
     MIC["microphone"] --> CAP["capture<br/>int16 @ 16 kHz<br/>2 s ring buffer / 500 ms hop"]
     CAP --> DSP["MFCC — shared C dsp/mfcc<br/>features 100 x 13"]
     DSP --> TFL["TFLite interpreter<br/>same .tflite on both targets<br/>scores: noise, wake, 11 commands"]
-    TFL --> SM["state machine<br/>WAKE_LISTEN and LISTENING"]
+    TFL --> SM["state machine<br/>WAKE_LISTEN, CONFIRMING, LISTENING"]
     SM --> EVT["event sink<br/>serial lines (XIAO) - JSON lines (Pi)"]
+    SM --> FB["feedback player<br/>fixed 'Escuchando' clip"]
+    FB --> SPK["speaker<br/>XIAO: I2S MAX98357A / Pi: USB dongle"]
     EVT --> OC["output controller<br/>9 relay channels: LM LB LA GD GI LPB LPA A CC"]
     OC --> CAR["relay channels to car"]
 ```
 
 ### State machine
 
-States: `WAKE_LISTEN`, `LISTENING`. One multiclass model runs continuously; the state machine
-interprets its scores (D-004):
+States: `WAKE_LISTEN`, `CONFIRMING`, `LISTENING`. One multiclass model runs continuously; the
+state machine interprets its scores (D-004):
 
 ```mermaid
 stateDiagram-v2
     [*] --> WAKE_LISTEN
-    WAKE_LISTEN --> LISTENING: wake >= threshold + margin, emit WAKE, start 5 s timer
+    WAKE_LISTEN --> CONFIRMING: wake >= threshold + margin, emit WAKE, play clip
     WAKE_LISTEN --> WAKE_LISTEN: below threshold, stay silent
+    CONFIRMING --> LISTENING: clip ends, start 5 s timer
     LISTENING --> WAKE_LISTEN: command >= threshold + margin, emit CMD, stop timer
     LISTENING --> LISTENING: wake wins window, refresh timer (max once, Q-005)
     LISTENING --> WAKE_LISTEN: 5 s elapsed, emit TIMEOUT
@@ -63,14 +68,40 @@ stateDiagram-v2
 
 | Current | Trigger | Action | Next |
 |---|---|---|---|
-| WAKE_LISTEN | wake ≥ wake_threshold + margin | emit `WAKE`, start 5 s timer | LISTENING |
+| WAKE_LISTEN | wake ≥ wake_threshold + margin | emit `WAKE`, play "Escuchando" (FR-018) | CONFIRMING |
 | WAKE_LISTEN | any other score / below threshold | stay silent | WAKE_LISTEN |
+| CONFIRMING | playback ends (≤ 500 ms, NFR-010) | start 5 s timer; discard windows overlapping playback | LISTENING |
 | LISTENING | command ≥ cmd_threshold[class] + margin[class], argmax ≠ wake | emit `CMD id conf`, stop timer | WAKE_LISTEN |
 | LISTENING | wake wins its window | refresh timer (max once, Q-005) | LISTENING |
 | LISTENING | 5 s elapsed | emit `TIMEOUT` | WAKE_LISTEN |
 
-Debounce: while LISTENING, a `WAKE` argmax never acts as a command (FR-005). The model itself is
+Debounce: while LISTENING, a `WAKE` argmax never acts as a command (FR-005). While CONFIRMING, no
+window decides — frames overlapping playback are excluded (FR-019); inference and `DBG pred=`
+logging continue. The model itself is
 stateless; all state is the machine above (identical semantics on both targets — AGENTS rule 5).
+
+## Audio feedback
+
+Wake acceptance is confirmed by playing the fixed clip `assets/escuchando.wav` (FR-018, FR-019,
+D-006, Q-012): rendered once with a Spanish TTS voice, 16 kHz/16-bit/mono, ≤ 500 ms
+(silence-trimmed), committed to the repo — byte-identical on both targets. No runtime synthesis
+exists on any target.
+
+- **Trigger**: the `WAKE_LISTEN → CONFIRMING` transition — the same edge that emits `WAKE`.
+- **Timing**: playback starts ≤ 200 ms after acceptance, ends ≤ 500 ms after it starts; the 5 s
+  command timer starts at playback end (NFR-010) — the whole chain stays inside FR-001's budget.
+- **Self-hearing guard**: classification windows whose frames overlap playback are discarded
+  (FR-019); inference and `DBG pred=` logging continue throughout.
+- **Observability**: playback logs `DBG play=escuchando state=start|end t_ms=…` (NFR-008 style).
+- **Fail-fast**: an absent/unusable output device aborts at boot with
+  `EVT ERROR code=SPK_INIT_FAILED` on both targets (Q-003 precedent).
+
+| Target | Output path | Playback |
+|---|---|---|
+| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on free header pins (SD-card pins stay free for relays, TD-009) | WAV streamed from flash via I2S |
+| Pi | USB audio dongle → powered speaker (default ALSA device) | same clip via `sounddevice` output stream |
+
+Flash cost on XIAO: ~16 KB (500 ms of 16 kHz int16 mono) — fits NFR-002 alongside the model.
 
 ## Data model
 
@@ -219,6 +250,7 @@ or overwrite* local artifacts (AGENTS rule 3).
 | Item | Budget | Estimated actual | Confirmed by |
 |---|---|---|---|
 | int8 model (flash) | ≤ 100 KB | ~6 KB (≈3K params: 13-class head adds only ~160 B vs 3-class) | T9 (export size report) |
+| "Escuchando" clip (flash) | — | ~16 KB (500 ms, 16 kHz int16 mono) | T15 playback verified |
 | TFLM arena | ≤ 150 KB | ~16–32 KB | T10b (arena stats) |
 | Audio ring buffer (2 s int16 @16 kHz) | 64 KB | 64 KB | — |
 | MFCC work area | ≤ 8 KB | ~8 KB | T6 |
@@ -240,7 +272,8 @@ Scripted, sequential (Q-004), per device (FR-014, US-005):
 4. **Memory**: reported arena/heap stats from device logs (NFR-002).
 5. **Output timing**: relay channels probed during scripted commands — blink period 2.0 s
    ±200 ms, GD/GI span 45 s ±1 s, A pulse 2 s ±50 ms, CC pulse 0.5 s ±50 ms, CP stop < 200 ms
-   (FR-009).
+   (FR-009); feedback: "Escuchando" starts ≤ 200 ms after `WAKE` and ends ≤ 500 ms later
+   (NFR-010).
 6. Results table + device decision in `docs/bench.md`.
 
 ## Technical decisions
@@ -287,6 +320,12 @@ model tiny; variants differ mainly by the leading verb, and class weights + augm
 the diversity. Alternative: one class per variant (21 classes) — more precision but more data
 per variant and a larger model; revisit only if the bench shows variant-induced confusion.
 
+**TD-011 — Pre-rendered TTS clip for wake confirmation** (D-006, FR-018). Alternatives: runtime
+TTS on the Pi (rejected: the XIAO cannot synthesize speech → divergent behavior = bug, AGENTS
+rule 5); owner-recorded clip (deferred: extra recording session, zero functional gain — the
+asset is a single file and can be swapped without code changes); buzzer beep (rejected: owner
+asked for spoken "Escuchando").
+
 ## Risks & mitigations
 
 - **PDM vs USB mic domain shift** → record training data from both mics; bench measures
@@ -298,6 +337,8 @@ per variant and a larger model; revisit only if the bench shows variant-induced 
   conversion smoke test inside T9's first checklist item).
 - **int8 softmax saturation** (outputs quantize to 1/255 steps, confident predictions cap at
   0.996) → known lampara-aliz finding; margins tuned on quantized outputs, not float ones.
+- **Self-hearing** (feedback clip reaching the mic): `CONFIRMING` discards windows overlapping
+  playback (FR-019); the bench protocol includes wake → command sequences with the speaker live.
 
 ## Verification strategy
 
@@ -310,6 +351,7 @@ per variant and a larger model; revisit only if the bench shows variant-induced 
 | Integration | CLI | `ultron dataset validate` exit codes on corrupt/valid fixtures |
 | On-device | Interaction script | US-001 AC1–AC3 executed on both devices via event log |
 | On-device | Output timing | relay probes: blink/pulse durations within FR-009 tolerances |
+| On-device | Audio feedback | WAKE → clip timing on both devices: start ≤ 200 ms, duration ≤ 500 ms (NFR-010) |
 | On-device | Benchmark | protocol above → `docs/bench.md` |
 | Acceptance | EI sync | sync → checksum compare → EI project shows dataset + model |
 

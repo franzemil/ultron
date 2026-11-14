@@ -25,6 +25,8 @@
 | US-004 | T9, T10b, T11 |
 | US-005 | T12 |
 | US-006 | T13 |
+| FR-018, FR-019, NFR-010 | T15 |
+| US-007 | T15 |
 
 ## Implementation readiness check
 
@@ -197,6 +199,20 @@ criteria before the next begins. Spikes (T10a) never mark other tasks complete.
   CHANGELOG verified as PR-generated (no hand edits); `review.md` written with evidence; bump
   `.status` per phase.
 - Verify: all doc links resolve; every inference-affecting change has a conventional PR title.
+
+### T15 — Wake feedback: "Escuchando" on both targets (3 h)
+- Covers: FR-018, FR-019, NFR-010, US-007. Deps: T10b (XIAO core), T11 (Pi runtime). Priority: Must.
+- Checklist: render + commit `assets/escuchando.wav` (Spanish TTS, 16 k/16-bit/mono, ≤ 500 ms,
+  silence-trimmed); XIAO I2S output to MAX98357A + speaker with the `CONFIRMING` state and
+  playback-overlap window discard (design, TD-011); Pi playback via `sounddevice` through the USB
+  dongle; identical trigger/timing/fail-fast (`SPK_INIT_FAILED`) semantics on both targets;
+  `DBG play=` lines; wiring + volume notes.
+- Likely files: `assets/escuchando.wav`, `devices/esp32/ultron_voice/feedback.{h,cpp}`,
+  `devices/orangepi/feedback.py`, `docs/feedback.md`.
+- Verify: on both devices — "hey ultron" → `WAKE` event → clip audible ≤ 200 ms later and ends
+  ≤ 500 ms after start; a command spoken right after the clip is accepted (window started at
+  clip end); below-threshold audio never plays anything; missing output device fails boot with
+  `SPK_INIT_FAILED`.
 
 ## Traceability note
 
