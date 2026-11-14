@@ -7,7 +7,7 @@
 
 | Spec | Title | Milestone | Status |
 |---|---|---|---|
-| [001](specs/001-can-hear/requirements.md) | Can Hear — CLI, dataset tooling, recorders, MFCC parity | Milestone 1 — Can hear | `design:approved` |
+| [001](specs/001-can-hear/requirements.md) | Can Hear — CLI, dataset tooling, recorders, MFCC parity | Milestone 1 — Can hear | `tasks:approved` |
 | [002](specs/002-can-think/requirements.md) | Can Think — features, PyTorch training, TFLite export + parity gate | Milestone 2 — Can think | `requirements:draft` |
 | [003](specs/003-can-act/requirements.md) | Can Act — firmware + Pi runtime, relays, "Escuchando" feedback | Milestone 3 — Can act | `requirements:draft` |
 | [004](specs/004-can-decide/requirements.md) | Can Decide — benchmark + device decision | Milestone 4 — Can decide | `requirements:draft` |
