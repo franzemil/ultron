@@ -165,7 +165,8 @@ def _load_pipeline(hf_token: Optional[str], revision: Optional[str] = None):
     console.print(f"[red]Failed to load pyannote VAD model: {last_exc}[/red]")
     if token is None:
         console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
-    console.print("Try passing --revision <commit> if the model requires an explicit revision.")
+    console.print("Find the model revision at: https://huggingface.co/pyannote/voice-activity-detection/commits/main")
+    console.print("Then rerun: ultron split <take.wav> --label <label> --revision <commit-hash>")
     console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
     raise typer.Exit(code=2)
 
