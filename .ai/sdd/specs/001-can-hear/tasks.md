@@ -113,3 +113,9 @@ stop and update the spec (never silently implement).
 - Likely files: `cli/src/ultron/record.py`, `tests/test_record_cli.py`.
 - Verify: `uv run ultron record --help` exits 0; `uv run pytest tests/test_record_cli.py`
   green; recorded WAVs pass `ultron dataset validate`.
+
+### T9 — Long-take recording + pyannote VAD split (3 h)
+- Covers: FR-027, FR-028, FR-029, FR-030, FR-031, NFR-008; US-002. Deps: T4. Priority: Should.
+- Checklist: `cli/src/ultron/record_long.py` — record-long subcommand (20 s continuous take, one label); `cli/src/ultron/split.py` — split subcommand using pyannote.audio VAD; slice segments into `{label}_local_<nn>.wav`; validate `--label` against registry; HF token handling; host-side tests with stubbed pyannote.
+- Likely files: `cli/src/ultron/record_long.py`, `cli/src/ultron/split.py`, `tests/test_record_long.py`, `tests/test_split.py`.
+- Verify: `uv run ultron record-long --help` exits 0; `uv run ultron split --help` exits 0; `uv run pytest tests/test_split.py` green; missing HF token fails fast; `--label` rejects unknown codes.

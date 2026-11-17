@@ -13,6 +13,8 @@ from .config import config
 from .logging import logger, setup_logging
 from ultron.dataset import ingest, validate, dc_fix
 from ultron.record import record_command
+from ultron.record_long import record_long_command
+from ultron.split import split_command
 
 app = typer.Typer(
     name="ultron",
@@ -26,6 +28,8 @@ dataset = typer.Typer(
 )
 app.add_typer(dataset, name="dataset")
 app.command(name="record")(record_command)
+app.command(name="record-long")(record_long_command)
+app.command(name="split")(split_command)
 
 
 @dataset.command(name="ingest")

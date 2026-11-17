@@ -139,3 +139,36 @@ ultron record [--seconds 5] [--samples 20] [--device DEVICE] [--out-dir dataset/
 - `uv run pytest tests/test_record_cli.py` green.
 - Recorded WAVs pass `ultron dataset validate` (FR-021).
 
+
+## Long-take recording + pyannote split — `ultron record-long` / `ultron split` (T9)
+
+**CLI** — two new Typer subcommands under the `ultron` app:
+
+```
+ultron record-long --seconds 20 --label lb [--out-dir dataset/takes]
+ultron split dataset/takes/take_001_lb.wav --label lb [--hf-token TOKEN]
+```
+
+- `record-long`: records N seconds (default 20) of continuous 16 kHz/16-bit/mono audio from the host mic into `dataset/takes/take_<nn>_<label>.wav`. One label per take.
+- `split`: runs pyannote.audio Voice Activity Detection on the take, slices each speech segment into its own WAV, writes `{label}_local_<nn>.wav` under `dataset/originals/<label>/`.
+- `--label` validated against `model/registry.json` (FR-030).
+- Hugging Face token required for pyannote model download (`PYANNOTE_HF_TOKEN` env var or `--hf-token`) (FR-031).
+- VAD-only pipeline — no STT, no diarization, no on-device speech models (NFR-008).
+- Output WAVs are 16 kHz / 16-bit / mono; pass `ultron dataset validate` (FR-021).
+
+**Files:**
+- `cli/src/ultron/record_long.py` — `record-long` subcommand.
+- `cli/src/ultron/split.py` — `split` subcommand (pyannote VAD + slicing).
+- `tests/test_record_long.py`, `tests/test_split.py` — host-side tests (pyannote stubbed; fake segments).
+
+**Verification:**
+- `uv run ultron record-long --help` exits 0.
+- `uv run ultron split --help` exits 0.
+- `uv run pytest tests/test_split.py` green — fake pyannote segments produce valid 16k/16-bit/mono WAVs.
+- `--label` validation rejects unknown codes.
+- Missing HF token fails fast.
+
+**Pyannote notes:**
+- `pyannote.audio` requires `pip install pyannote.audio` and a Hugging Face account + token.
+- Model: `pyannote/voice-activity-detection`.
+- Heavy dependency (torch). Host dev machine only; not bundled in device firmware.
