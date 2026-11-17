@@ -5,7 +5,7 @@ description = "Ultron CLI — Spanish voice-actuation car manager"
 requires-python = ">=3.11"
 dependencies = [
     "typer[all]",
-    "python-dotenv",
+    "pydantic-settings",
     "ultron-model",
 ]
 
