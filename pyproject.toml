@@ -12,7 +12,7 @@ members = ["cli", "model"]
 dev = ["pytest"]
 
 [tool.uv]
-sources = { ultron = { path = "./cli" }, ultron-model = { path = "./model" } }
+sources = { ultron = { path = "./cli", editable = true }, ultron-model = { path = "./model", editable = true } }
 
 [tool.setuptools]
 packages = []
