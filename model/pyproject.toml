@@ -3,7 +3,10 @@ name = "ultron-model"
 version = "0.1.0"
 description = "Ultron model package — PyTorch → TFLite pipeline"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.4.6",
+    "torch>=2.15.0",
+]
 
 [tool.uv]
 package = true
