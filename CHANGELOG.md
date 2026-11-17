@@ -8,6 +8,9 @@
 > `dataset: …`) — see the `@conventional-commits` skill in `.agents/skills/`.
 > This file is never hand-edited (bot commits only).
 
+## 2026-11-17
+- feat(cli): uv workspace + ultron CLI skeleton (T2) (#11) — @franzemil
+
 ## 2026-11-14
 - spec: approve tasks gate (001-can-hear) (#5) — @franzemil
 
