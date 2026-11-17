@@ -522,8 +522,15 @@ def sweep_grid(
                 )
             if noise_i is not None:
                 noise_mask = y == noise_i
+                # A noise window is "rejected" when nothing decodes OR the
+                # model confidently says the null class (noise) — either way
+                # no wake/command fires.
                 noise_reject = (
-                    float(np.mean(decoded[noise_mask] == -1)) if noise_mask.any() else None
+                    float(
+                        np.mean((decoded[noise_mask] == -1) | (decoded[noise_mask] == noise_i))
+                    )
+                    if noise_mask.any()
+                    else None
                 )
             else:
                 noise_reject = None
