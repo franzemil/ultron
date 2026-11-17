@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(model): ONNX → TFLite export + parity gate (T9) (#30) — @franzemil
+
+## 2026-11-17
 - feat(model): training + threshold sweep (T8) (#31) — @franzemil
 
 ## 2026-11-17
