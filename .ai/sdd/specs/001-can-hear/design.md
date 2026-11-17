@@ -109,3 +109,33 @@ a 2 s window. Cost: 2× features per window, still trivially small.
 | Integration | CLI | `ultron dataset validate` exit codes on corrupt/valid fixtures (FR-021) |
 | Unit | Augmentation | same seed ⇒ byte-identical augmentation plan |
 | Unit | Synthetic | same seed ⇒ identical synthetic set; hold-out validator rejects `synthetic` |
+
+## Interactive recorder — `ultron record`
+
+**CLI** — new `record` Typer subcommand under the `ultron` app:
+
+```
+ultron record [--seconds 5] [--samples 20] [--device DEVICE] [--out-dir dataset/originals]
+```
+
+- Reads `model/registry.json` for the recordable code list.
+- Uses `rich` (`Confirm.ask`, `Prompt.ask`) for interactive code selection — no silent
+  fallback to device 0; fails fast listing capture devices when no mic is present.
+- Defaults: `--seconds 5`, `--samples 20` (matches NFR-005 ≥ 20 originals per variant).
+- For each selected code: record `--seconds` of audio → save as
+  `{label}_local_{nn:02d}.wav` → repeat until `--samples` files exist for that label.
+- Validates each selected code against `model/registry.json` (FR-026); rejects unknown codes.
+- Reuses the same 16 kHz / 16-bit / mono WAV writing as `devices/local/record.py` so host
+  recordings are byte-identical to the standalone script output.
+- Prints progress per attempt and a final summary; suggests `ultron dataset validate` after.
+
+**Files:**
+- `cli/src/ultron/record.py` — new `record` Typer subcommand module.
+- `tests/test_record_cli.py` — host-side tests (prompt stubbed, WAV output validated against
+  16 kHz / 16-bit / mono contract).
+
+**Verification:**
+- `uv run ultron record --help` exits 0.
+- `uv run pytest tests/test_record_cli.py` green.
+- Recorded WAVs pass `ultron dataset validate` (FR-021).
+

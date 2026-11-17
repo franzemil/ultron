@@ -122,3 +122,22 @@ loudly (no silent training on corrupt data — lampara lesson).
 No implementation code until this spec's `.status` reads `tasks:approved`. Before starting
 implementation the implementing agent restates FR-016/020–022, NFR-005/006/007 (DSP clause), and
 the shared system context in its own words. If anything is ambiguous, STOP and ask.
+
+## Interactive recorder — `ultron record` (new task)
+
+**FR-023 (Must)** — WHEN `ultron record` runs, THE SYSTEM SHALL prompt the owner to select
+which command codes to record from `model/registry.json` (10 actions + cancel, plus wake and
+noise), using an interactive rich-based prompt.
+
+**FR-024 (Must)** — WHEN recording a selected code, THE SYSTEM SHALL record `--seconds` of
+audio per attempt and save each WAV as `{label}_local_{nn:02d}.wav` under
+`dataset/originals/<label>/` with mic tag `local` (matching `dataset ingest`'s `local` mic
+tag).
+
+**FR-025 (Must)** — WHEN `--samples N` is set, THE SYSTEM SHALL record until N examples exist
+per selected code, skipping already-recorded files and continuing the sequence from the next
+free `<nn>`.
+
+**FR-026 (Must)** — WHEN the owner selects a code not present in `model/registry.json`, THE
+SYSTEM SHALL reject it, list the valid codes, and reprompt.
+

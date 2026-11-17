@@ -12,6 +12,7 @@ import typer
 from .config import config
 from .logging import logger, setup_logging
 from ultron.dataset import ingest, validate, dc_fix
+from ultron.record import record_command
 
 app = typer.Typer(
     name="ultron",
@@ -24,6 +25,7 @@ dataset = typer.Typer(
     help="Dataset tooling: ingest, validate, dcfix.",
 )
 app.add_typer(dataset, name="dataset")
+app.command(name="record")(record_command)
 
 
 @dataset.command(name="ingest")

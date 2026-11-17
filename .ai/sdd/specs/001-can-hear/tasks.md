@@ -103,3 +103,13 @@ criteria before the next begins.
 
 Every task maps to requirements in the coverage table; any FR without a task is a spec gap —
 stop and update the spec (never silently implement).
+
+### T8 — Interactive recorder CLI `ultron record` (3 h)
+- Covers: FR-023, FR-024, FR-025, FR-026; US-002. Deps: T4. Priority: Must.
+- Checklist: `cli/src/ultron/record.py` — new `record` Typer subcommand; rich-based
+  interactive code selection from `model/registry.json`; record `--seconds` per attempt
+  until `--samples` examples per code; write `{label}_local_{nn:02d}.wav` (mic tag local);
+  validate codes against registry; host-side tests.
+- Likely files: `cli/src/ultron/record.py`, `tests/test_record_cli.py`.
+- Verify: `uv run ultron record --help` exits 0; `uv run pytest tests/test_record_cli.py`
+  green; recorded WAVs pass `ultron dataset validate`.
