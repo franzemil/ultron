@@ -43,15 +43,18 @@ def pick_device(device: str | int | None) -> int:
     inputs = list_capture_devices()
     if not inputs:
         print("record.py: no capture device found.", file=sys.stderr)
-        print("Plug in a microphone and rerun.", file=sys.stderr)
+        print(
+            "On Windows, grant microphone access to Terminal/Python, "
+            "plug in a microphone, or pass --device <index>.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     if device is None:
-        try:
-            default = sd.default.device[0]
-            if default is not None:
-                return int(default)
-        except Exception:
-            pass
+        default = sd.default.device[0]
+        # sounddevice reports -1 on Windows when no default input is configured;
+        # -1 is not None, so fall back to the first available input device.
+        if default is not None and default >= 0:
+            return int(default)
         return int(inputs[0]["index"])
     try:
         return int(device)

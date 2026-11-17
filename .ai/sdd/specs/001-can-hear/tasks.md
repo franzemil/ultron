@@ -87,8 +87,11 @@ criteria before the next begins.
 - Policy (lampara-aliz lesson): synthetic clips are tagged `synthetic`, NEVER enter the fresh
   hold-out, never count toward NFR-005 original minimums, and are used in training only via
   `--with-synthetic` (default **off** — owner decides per run); every use is a changelog event.
-- Checklist: `synth tts` (multi-voice, seeded), `synth noise`, synthetic tagging in the dataset
-  layout, dry-run plan before writing.
+- Checklist:
+  - [x] `synth tts` (multi-voice, seeded)
+  - [x] `synth noise`
+  - [x] Synthetic tagging in the dataset layout
+  - [x] Dry-run plan before writing
 - Likely files: `cli/src/ultron/synth.py`, `tests/test_synth.py`, `docs/recording.md`.
 - Verify: same seed ⇒ identical synthetic set; hold-out validator rejects `synthetic` clips;
   `synth tts --dry-run` lists targets without writing.
