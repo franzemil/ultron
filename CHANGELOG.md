@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(devices): WAV recorders + interactive ultron record CLI (T4 + T8) (#13) — @franzemil
+
+## 2026-11-17
 - feat(dataset): ingest, validate, dcfix + registry (T3) (#12) — @franzemil
 
 ## 2026-11-17
