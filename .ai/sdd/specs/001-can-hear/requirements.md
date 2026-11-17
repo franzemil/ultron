@@ -122,3 +122,36 @@ loudly (no silent training on corrupt data — lampara lesson).
 No implementation code until this spec's `.status` reads `tasks:approved`. Before starting
 implementation the implementing agent restates FR-016/020–022, NFR-005/006/007 (DSP clause), and
 the shared system context in its own words. If anything is ambiguous, STOP and ask.
+
+## Interactive recorder — `ultron record` (new task)
+
+**FR-023 (Must)** — WHEN `ultron record` runs, THE SYSTEM SHALL prompt the owner to select
+which command codes to record from `model/registry.json` (10 actions + cancel, plus wake and
+noise), using an interactive rich-based prompt.
+
+**FR-024 (Must)** — WHEN recording a selected code, THE SYSTEM SHALL record `--seconds` of
+audio per attempt and save each WAV as `{label}_local_{nn:02d}.wav` under
+`dataset/originals/<label>/` with mic tag `local` (matching `dataset ingest`'s `local` mic
+tag).
+
+**FR-025 (Must)** — WHEN `--samples N` is set, THE SYSTEM SHALL record until N examples exist
+per selected code, skipping already-recorded files and continuing the sequence from the next
+free `<nn>`.
+
+**FR-026 (Must)** — WHEN the owner selects a code not present in `model/registry.json`, THE
+SYSTEM SHALL reject it, list the valid codes, and reprompt.
+
+
+## Long-take recording + pyannote split — `ultron record-long` / `ultron split` (new task T9)
+
+**FR-027 (Must)** — WHEN `ultron record-long --seconds N --label <code>` runs, THE SYSTEM SHALL record N seconds of continuous 16 kHz / 16-bit / mono audio from the host mic into a single take WAV (`take_<nn>_<label>.wav`), containing only that one label's utterances.
+
+**FR-028 (Must)** — WHEN `ultron split <take.wav>` runs with pyannote.audio VAD, THE SYSTEM SHALL segment the take into utterance regions and write each segment as `{label}_local_<nn>.wav` under `dataset/originals/<label>/` (mic tag `local`, 16 kHz / 16-bit / mono).
+
+**FR-029 (Must)** — WHEN pyannote VAD finds no speech in a take, THE SYSTEM SHALL exit non-zero listing the take and suggesting re-recording.
+
+**FR-030 (Must)** — WHEN splitting, THE SYSTEM SHALL require `--label <code>` to be a valid `model/registry.json` id (10 actions + cancel, plus wake and noise); invalid codes are rejected with a list of valid codes.
+
+**FR-031 (Must)** — THE SYSTEM SHALL require a Hugging Face API token for pyannote model download (via `PYANNOTE_HF_TOKEN` env or `--hf-token`); missing token fails fast with a clear message.
+
+**NFR-008 (Should)** — pyannote.audio segmentation should run entirely on the host; nothing related to STT/diarization runs on XIAO or Pi (no on-device speech models).

@@ -7,11 +7,19 @@ configuration loader; real commands land in later tickets.
 
 from __future__ import annotations
 
+from typing import Optional
+
+import questionary
 import typer
+from rich.console import Console
+console = Console()
 
 from .config import config
 from .logging import logger, setup_logging
-from ultron.dataset import ingest, validate, dc_fix
+from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
+from ultron.record import record_command
+from ultron.record_long import record_long_command
+from ultron.split import _phrase_for, _registry, split_command
 
 app = typer.Typer(
     name="ultron",
@@ -24,6 +32,84 @@ dataset = typer.Typer(
     help="Dataset tooling: ingest, validate, dcfix.",
 )
 app.add_typer(dataset, name="dataset")
+app.command(name="record")(record_command)
+app.command(name="record-long")(record_long_command)
+app.command(name="split")(split_command)
+
+
+def _pick_label(registry: dict) -> str:
+    """Interactive rich prompt picker: choose a label to record.
+
+    Shows each registry code with its Spanish phrase.
+    """
+    codes = sorted(REGISTRY_IDS)
+    choices = []
+    for code in codes:
+        phrase = _phrase_for(code, registry)
+        choices.append(
+            questionary.Choice(title=f"{code:<10} {phrase}", value=code)
+        )
+    selected = questionary.select(
+        "Select a label to record:",
+        choices=choices,
+    ).ask()
+    if selected is None:
+        console.print("Aborted.")
+        raise typer.Exit(code=0)
+    return selected
+
+
+@app.command(name="record-split")
+def record_split_command(
+    seconds: float = typer.Option(20.0, "--seconds", "-s", help="Seconds to record (default 20)."),
+    label: Optional[str] = typer.Argument(
+        None, help="Label slug (registry id, e.g. lb, wake, noise). Prompted if omitted."
+    ),
+    device: Optional[str] = typer.Option(
+        None, "--device", "-d", help="Input device index or name substring."
+    ),
+    out_dir: str = typer.Option(
+        "dataset", "--out-dir", "-o", help="Dataset output directory (default dataset/)."
+    ),
+) -> None:
+    """Record a continuous take then split it into per-utterance WAVs - one command.
+
+    Records --seconds of audio as a take, runs Silero VAD on it, and
+    writes each speech segment as {label}_local_<nn>.wav under
+    dataset/originals/<label>/. Single label per take; no STT needed.
+
+    If --label is omitted, an interactive prompt lets you pick from the
+    registry codes (with Spanish phrases).
+    """
+    from pathlib import Path
+
+    from ultron.dataset import REGISTRY_IDS
+
+    registry = _registry()
+
+    if label is None:
+        label = _pick_label(registry)
+
+    if label not in set(REGISTRY_IDS):
+        console.print(f"[red]Unknown label '{label}'.[/red]")
+        console.print(f"Valid codes: {', '.join(sorted(REGISTRY_IDS))}")
+        raise typer.Exit(code=2)
+
+    takes_dir = Path(out_dir) / "takes"
+    take_path = record_long_command(
+        seconds=seconds, label=label, device=device, out_dir=str(takes_dir)
+    )
+    take_path = str(take_path)
+
+    console.print()
+    split_command(
+        take=str(take_path),
+        label=label,
+        out_dir=out_dir,
+    )
+
+
+__all__ = ["main"]
 
 
 @dataset.command(name="ingest")
@@ -65,6 +151,29 @@ def dataset_dcfix(
 ) -> None:
     """Remove DC offset from every WAV under <path> (recenter waveform around zero)."""
     dc_fix(path=path)
+
+
+@dataset.command(name="export")
+def dataset_export(
+    path: str = typer.Argument("dataset", help="Dataset directory to zip (default dataset/)."),
+    out: str = typer.Option(
+        "dataset_export.zip", "--out", "-o", help="Output zip path."
+    ),
+) -> None:
+    """Zip the dataset so recordings survive beyond the worktree."""
+    export_zip(path=path, out=out)
+
+
+@dataset.command(name="import")
+def dataset_import(
+    zip_path: str = typer.Argument(..., help="Zip file produced by 'ultron dataset export'."),
+    dest: str = typer.Option("dataset", "--dest", "-d", help="Destination dataset directory."),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite existing files."
+    ),
+) -> None:
+    """Import a dataset zip into <dest> (recordings back into the worktree)."""
+    import_zip(zip_path=zip_path, dest=dest, force=force)
 
 
 @app.command(name="config")

@@ -272,3 +272,77 @@ def validate_registry(path="model/registry.json"):
 
 if __name__ == "__main__":
     raise SystemExit(validate(sys.argv[1] if len(sys.argv) > 1 else "dataset"))
+
+
+# ---------------------------------------------------------------------------
+# dataset export / import (zip) — persist recordings beyond the worktree
+# ---------------------------------------------------------------------------
+def export_zip(path="dataset", out="dataset_export.zip"):
+    """Zip the dataset directory (takes + originals + everything under <path>).
+
+    Returns (out, file_count). Refuses to overwrite without force.
+    """
+    import zipfile
+
+    path = os.path.normpath(path)
+    if not os.path.isdir(path):
+        _fail(f"not a directory: {path}")
+    if os.path.isfile(out):
+        _fail(f"output already exists: {out} (remove it first)")
+
+    count = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for dirpath, _dirs, files in os.walk(path):
+            for name in sorted(files):
+                full = os.path.join(dirpath, name)
+                arc = os.path.relpath(full, os.path.dirname(path) or ".")
+                z.write(full, arc)
+                count += 1
+    print(f"exported {count} file(s) -> {out}")
+    return out, count
+
+
+def import_zip(zip_path, dest="dataset", force=False):
+    """Import a dataset zip produced by export_zip into <dest>.
+
+    Refuses to overwrite existing files unless force=True.
+    Returns (dest, imported_count).
+    """
+    import zipfile
+
+    if not os.path.isfile(zip_path):
+        _fail(f"zip not found: {zip_path}")
+
+    # zip root: export uses os.path.relpath(full, dirname(path)); when path is
+    # "dataset" the arcnames start with "dataset/...". Strip the first component
+    # if it matches dest's basename so imports are flexible about naming.
+    imported = 0
+    overwritten = 0
+    with zipfile.ZipFile(zip_path, "r") as z:
+        names = [n for n in z.namelist() if not n.endswith("/")]
+        if not names:
+            _fail(f"zip contains no files: {zip_path}")
+        first = names[0].split("/")[0]
+        base = os.path.basename(os.path.normpath(dest))
+        for name in names:
+            parts = name.split("/")
+            if parts[0] in ("..", ".") or name.startswith("/"):
+                continue  # zip-slip guard: skip suspicious paths
+            if parts[0] == first and first != base:
+                rel = "/".join(parts[1:])
+            else:
+                rel = name
+            if not rel or rel.startswith(".."):
+                continue
+            target = os.path.join(dest, rel)
+            if os.path.isfile(target):
+                if not force:
+                    print(f"skip existing: {target} (use --force to overwrite)")
+                    continue
+                overwritten += 1
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with z.open(name) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            imported += 1
+    print(f"imported {imported} file(s) into {dest} ({overwritten} overwritten)")
+    return dest, imported

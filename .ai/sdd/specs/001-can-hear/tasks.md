@@ -60,9 +60,9 @@ criteria before the next begins.
 - Verify: `uv run ultron dataset validate` fails loudly on a corrupt fixture and passes a valid
   one.
 
-### T4 — Recorders for both devices (4 h)
+### T4 — Recorders for both devices (4 h) ✅
 - Covers: US-002, NFR-005. Deps: T2. Priority: Must.
-- Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
+- [x] Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
   Pi recorder script (`devices/orangepi/record.py`, sounddevice, 16 k/16-bit/mono, label arg);
   docs.
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
@@ -103,3 +103,19 @@ criteria before the next begins.
 
 Every task maps to requirements in the coverage table; any FR without a task is a spec gap —
 stop and update the spec (never silently implement).
+
+### T8 — Interactive recorder CLI `ultron record` (3 h)
+- Covers: FR-023, FR-024, FR-025, FR-026; US-002. Deps: T4. Priority: Must.
+- Checklist: `cli/src/ultron/record.py` — new `record` Typer subcommand; rich-based
+  interactive code selection from `model/registry.json`; record `--seconds` per attempt
+  until `--samples` examples per code; write `{label}_local_{nn:02d}.wav` (mic tag local);
+  validate codes against registry; host-side tests.
+- Likely files: `cli/src/ultron/record.py`, `tests/test_record_cli.py`.
+- Verify: `uv run ultron record --help` exits 0; `uv run pytest tests/test_record_cli.py`
+  green; recorded WAVs pass `ultron dataset validate`.
+
+### T9 — Long-take recording + pyannote VAD split (3 h)
+- Covers: FR-027, FR-028, FR-029, FR-030, FR-031, NFR-008; US-002. Deps: T4. Priority: Should.
+- Checklist: `cli/src/ultron/record_long.py` — record-long subcommand (20 s continuous take, one label); `cli/src/ultron/split.py` — split subcommand using pyannote.audio VAD; slice segments into `{label}_local_<nn>.wav`; validate `--label` against registry; HF token handling; host-side tests with stubbed pyannote.
+- Likely files: `cli/src/ultron/record_long.py`, `cli/src/ultron/split.py`, `tests/test_record_long.py`, `tests/test_split.py`.
+- Verify: `uv run ultron record-long --help` exits 0; `uv run ultron split --help` exits 0; `uv run pytest tests/test_split.py` green; missing HF token fails fast; `--label` rejects unknown codes.
