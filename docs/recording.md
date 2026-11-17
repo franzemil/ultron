@@ -11,6 +11,7 @@ phrase, producing files that `ultron dataset validate` accepts
 |--------|----------|-----|---------|
 | Seeed XIAO ESP32S3 Sense | `devices/esp32/wav_recorder/wav_recorder.ino` | built-in PDM | SD card |
 | Orange Pi Zero 2W | `devices/orangepi/record.py` | owner-supplied USB | filesystem |
+| Dev host (local) | `devices/local/record.py` | default input mic | filesystem |
 
 ## XIAO ESP32S3 Sense — `wav_recorder.ino`
 
@@ -47,6 +48,23 @@ devices when no microphone is present — no silent fallback to device 0
 Example:
 ```bash
 python3 devices/orangepi/record.py guiñador_derecho --seconds 5 --out-dir dataset/originals/guiñador_derecho
+## Dev host (local) — `record.py`
+
+Same interface as the Pi recorder, but uses the host's default input device:
+
+```bash
+python3 devices/local/record.py <label> [--seconds 5] [--device DEVICE] [--out-dir DIR]
+```
+
+Writes `<label>_local_<nn>.wav`. Falls back to the first detected capture
+device when no default input is set; fails fast listing devices when none is
+present.
+
+Example:
+```bash
+python3 devices/local/record.py guiñador_derecho --seconds 5 --out-dir dataset/originals/guiñador_derecho
+```
+
 ```
 
 ## Host-side checks (this PR)
@@ -73,6 +91,7 @@ is updated there with the measured results once T7 runs.
 Files produced by these recorders are ready for `ultron dataset ingest`:
 - XIAO: `dataset/originals/<label>/<label>_xiao_<nn>.wav`
 - Pi:   `dataset/originals/<label>/<label>_pi_<nn>.wav`
+- local: `dataset/originals/<label>/<label>_local_<nn>.wav`
 - ext:  owner-supplied (phone/PC) recordings, tagged `ext`
 
-NFR-005: ≥ 20 originals per accepted phrase variant, recorded from both mics.
+NFR-005: ≥ 20 originals per accepted phrase variant, recorded from all mics (xiao, pi, local).
