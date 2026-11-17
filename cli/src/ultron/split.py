@@ -124,13 +124,16 @@ def _next_nn(label_dir: Path, label: str, mic: str = "local") -> int:
     return best + 1
 
 
-def _load_pipeline(hf_token: Optional[str]):
+def _load_pipeline(hf_token: Optional[str], revision: Optional[str] = None):
     """Load pyannote VAD pipeline.
 
     Token resolution order:
       1. --hf-token CLI option
       2. PYANNOTE_HF_TOKEN environment variable
-      3. Cached token from ``huggingface-cli login`` (use_auth_token=True)
+      3. Cached token from ``huggingface-cli login`` (handled by huggingface_hub)
+
+    Supports both old (use_auth_token) and new (hf_token/no-arg) pyannote.audio APIs.
+    Pass ``revision`` if the model requires an explicit model revision.
     """
     token = hf_token or os.environ.get("PYANNOTE_HF_TOKEN")
     try:
@@ -140,7 +143,11 @@ def _load_pipeline(hf_token: Optional[str]):
         console.print("pip install pyannote.audio")
         raise typer.Exit(code=2)
     # Try the new API first (pyannote.audio 2.x+: hf_token), fall back to old (use_auth_token).
-    load_kwargs_list = [{"hf_token": token} if token else {}, {"use_auth_token": token} if token else {}, {}]
+    # Try with and without explicit revision (some models require it).
+    load_kwargs_list = []
+    for kw in [{"hf_token": token} if token else {}, {"use_auth_token": token} if token else {}, {}]:
+        for rev in [{"revision": revision} if revision else {}, {}]:
+            load_kwargs_list.append({**kw, **rev})
     last_exc = None
     for kwargs in load_kwargs_list:
         try:
@@ -158,6 +165,7 @@ def _load_pipeline(hf_token: Optional[str]):
     console.print(f"[red]Failed to load pyannote VAD model: {last_exc}[/red]")
     if token is None:
         console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
+    console.print("Try passing --revision <commit> if the model requires an explicit revision.")
     console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
     raise typer.Exit(code=2)
 
@@ -167,6 +175,9 @@ def split_command(
     label: str = typer.Argument(..., help="Label slug (registry id, e.g. lb, wake, noise)."),
     hf_token: Optional[str] = typer.Option(
         None, "--hf-token", "-t", help="Hugging Face API token (or set PYANNOTE_HF_TOKEN)."
+    ),
+    revision: Optional[str] = typer.Option(
+        None, "--revision", "-r", help="Model revision (commit hash) if required by pyannote VAD model."
     ),
     out_dir: str = typer.Option(
         "dataset/originals", "--out-dir", "-o", help="Dataset output directory.",
@@ -183,7 +194,7 @@ def split_command(
 
     samples = _read_wav(take_path)
 
-    pipeline = _load_pipeline(hf_token)
+    pipeline = _load_pipeline(hf_token, revision)
     vad = pipeline({"waveform": samples[None, :].astype(np.float32) / 32768.0, "sample_rate": SAMPLE_RATE})
 
     segments = []

@@ -53,7 +53,7 @@ def load_split_module():
 
     fake_pyannote = SimpleNamespace(
         Pipeline=SimpleNamespace(
-            from_pretrained=lambda model, use_auth_token=None: _FakePipeline([])
+            from_pretrained=lambda model, **kwargs: _FakePipeline([])
         ),
     )
 
@@ -150,7 +150,7 @@ def test_split_creates_wavs(mod, tmp_path, monkeypatch):
     fake_pipeline = _FakePipeline([(0.5, 1.0), (1.5, 2.0)])
 
     fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
     )
 
     with _mock.patch.dict(sys.modules, {"pyannote.audio": fake_pyannote, "pyannote": SimpleNamespace(audio=fake_pyannote)}):
@@ -200,7 +200,7 @@ def test_split_no_speech_exits_nonzero(mod, tmp_path, monkeypatch):
             return _FakeVadResult()
 
     fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: _FakePipeline())
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: _FakePipeline())
     )
 
     from unittest import mock as _mock
@@ -247,7 +247,7 @@ def test_split_missing_hf_token_falls_back_to_cli(mod, tmp_path, monkeypatch):
 
     fake_pipeline = _FakePipeline([])
     fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
     )
 
     from unittest import mock as _mock

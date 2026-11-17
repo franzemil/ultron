@@ -71,6 +71,9 @@ def record_split_command(
     hf_token: Optional[str] = typer.Option(
         None, "--hf-token", "-t", help="Hugging Face API token (or set PYANNOTE_HF_TOKEN)."
     ),
+    revision: Optional[str] = typer.Option(
+        None, "--revision", "-r", help="Model revision (commit hash) if required by pyannote VAD model."
+    ),
     out_dir: str = typer.Option(
         "dataset", "--out-dir", "-o", help="Dataset output directory (default dataset/)."
     ),
@@ -109,6 +112,7 @@ def record_split_command(
         take=str(take_path),
         label=label,
         hf_token=hf_token,
+        revision=revision,
         out_dir=out_dir,
     )
 

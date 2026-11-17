@@ -97,7 +97,7 @@ def test_record_split_picker(mod, tmp_path, monkeypatch):
 
     fake_pipeline = _FakePipeline([(0.5, 1.0)])
     fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
     )
 
     def fake_rec(*args, **kwargs):
@@ -156,7 +156,7 @@ def test_record_split_end_to_end(mod, tmp_path):
 
     fake_pipeline = _FakePipeline([(0.5, 1.0), (1.5, 2.0)])
     fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
     )
 
     record_calls = []
