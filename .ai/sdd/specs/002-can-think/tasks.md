@@ -27,7 +27,7 @@ early and parallel, because its outcome gates Milestone 3 planning.
 
 - [x] `.status` reads `requirements:approved` ✅ (owner-approved 2026-11-17)
 - [x] `.status` reads `design:approved` ✅ (owner-approved 2026-11-17)
-- [ ] `.status` reads `tasks:approved` — **gates all implementation work**
+- [x] `.status` reads `tasks:approved` — **gates all implementation work** ✅ (owner-approved 2026-11-17)
 - [ ] Spec 001 (can-hear) delivers: validated dataset, `registry.json`, MFCC library (T3/T6)
 - [ ] No open questions remain in requirements.md (none today — Q-002/Q-006/Q-008/Q-013 resolved)
 

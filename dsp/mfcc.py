@@ -1,7 +1,7 @@
 """Python wrapper for the shared C MFCC library (dsp/mfcc.c).
 
-Loads ``build/libmfcc.so`` via ``ctypes`` and exposes frame-level MFCC
-feature extraction. Mirrors the C API in ``dsp/mfcc.h``:
+Loads the shared C MFCC library (``build/libmfcc.so``; ``libmfcc.dll`` on
+Windows/MinGW) via ``ctypes`` and exposes frame-level MFCC feature extraction. Mirrors the C API in ``dsp/mfcc.h``:
 
     mfcc_init(16000) -> ctx
     mfcc_compute(ctx, frame[320] int16, coeffs[13] out) -> int
@@ -20,17 +20,20 @@ FFT, pre-emphasis 0.97, Hamming window.
 from ctypes import CDLL, c_float, c_int, c_int16, c_void_p, POINTER
 from pathlib import Path
 import subprocess
+import sys
 
 _DSP_DIR = Path(__file__).resolve().parent
-_LIB_PATH = _DSP_DIR / "build" / "libmfcc.so"
+# Windows (MinGW-w64) shared libraries are .dll; every other host uses .so.
+_LIB_NAME = "libmfcc.dll" if sys.platform == "win32" else "libmfcc.so"
+_LIB_PATH = _DSP_DIR / "build" / _LIB_NAME
 
 _FRAME_LEN = 320
 _NUM_COEFFS = 13
 
 
 def _build_shared_lib():
-    """Build libmfcc.so on demand so the wrapper works from a fresh checkout."""
-    subprocess.run(["make", "-C", str(_DSP_DIR), "libmfcc.so"], check=True)
+    """Build the shared library on demand so the wrapper works from a fresh checkout."""
+    subprocess.run(["make", "-C", str(_DSP_DIR), _LIB_NAME], check=True)
 
 
 class Mfcc:
