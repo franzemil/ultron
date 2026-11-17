@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(dsp): shared C MFCC library + EI parity (T6) (#15) — @franzemil
+
+## 2026-11-17
 - feat(devices): WAV recorders + interactive ultron record CLI (T4 + T8) (#13) — @franzemil
 
 ## 2026-11-17
