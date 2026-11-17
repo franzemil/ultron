@@ -52,7 +52,7 @@ criteria before the next begins.
 
 ### T3 — Dataset tooling + registry (3 h)
 - Covers: FR-013 (schema support), FR-016, FR-020, FR-021, FR-022. Deps: T2. Priority: Must.
-- Checklist: `dataset ingest` (copy/label WAVs from ANY source — device recordings **and**
+- [x] Checklist: `dataset ingest` (copy/label WAVs from ANY source — device recordings **and**
   owner-supplied external recordings; mic source tagged in the filename, `lm_xiao_01.wav` /
   `lm_ext_01.wav`), `dataset validate` (16k/16-bit/mono checks, exit codes per file),
   `dataset dcfix`, `registry.json` schema + validator, label slugs.
