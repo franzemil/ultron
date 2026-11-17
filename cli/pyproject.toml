@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "questionary",
     "silero-vad",
+    "imageio-ffmpeg>=0.8.0",
 ]
 
 [project.scripts]

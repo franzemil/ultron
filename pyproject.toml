@@ -16,3 +16,7 @@ sources = { ultron = { path = "./cli", editable = true }, ultron-model = { path 
 
 [tool.setuptools]
 packages = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

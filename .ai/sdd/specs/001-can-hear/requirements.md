@@ -62,6 +62,10 @@ devices; a benchmark (spec 004) decides which one ships.
 - **AC2:** The Pi recorder captures the same format from its microphone.
 - **AC3:** Every recording is DC-offset-correctable and validates (`ultron dataset validate`).
 
+> **Deferred (D-012):** on-device verification of AC1/AC2 is an **optional, deferred pass** (T7) —
+> it does **not** gate the Milestone 1 exit. Until that pass runs, `dataset validate` targets are
+> owner-supplied external recordings (FR-020).
+
 ## Functional Requirements (EARS, MoSCoW)
 
 **FR-016 (Must)** — THE SYSTEM SHALL support a registry of up to 10 action commands plus a
@@ -97,6 +101,14 @@ merges, never hand-edited).
 **NFR-007 (Parity, DSP clause)** — DSP per-frame parity vs reference vectors ≤ 1e-3 max abs diff
 (float). The export clause of NFR-007 lives in spec 002.
 
+## Decisions
+
+**D-012 — Device-in-loop validation is optional and deferred (Milestone 1).** The Milestone 1
+gate is host-side: `ultron dataset validate` green on the data minimums (NFR-005, any source —
+FR-020) and per-frame MFCC parity ≤ 1e-3 (NFR-007 DSP clause). The XIAO/Pi recorder validation
+pass (T7) runs later, whenever a hardware session is convenient.
+*(Owner decision 2026-11-17: hardware validation must not block the phase — it can be done later.)*
+
 ## Implementation FAQ
 
 **Q-003: Which mic on the Pi? What if none is present?**
@@ -109,7 +121,8 @@ loudly (no silent training on corrupt data — lampara lesson).
 
 ## Success Metrics
 
-- **Milestone 1 — "can hear"**: both recorders + DSP parity green (NFR-007 DSP clause).
+- **Milestone 1 — "can hear"**: recorders implemented and host-verified + DSP parity green (NFR-007
+  DSP clause); on-device recorder validation is a deferred, optional pass (D-012, T7).
 
 ## Risks
 

@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import wave
+from pathlib import Path
 
 # Mic source tags allowed on `dataset ingest` (FR-020).
 VALID_MICS = {"xiao", "pi", "ext"}
@@ -17,6 +18,34 @@ LABEL_RE = re.compile(r"^[a-z][a-z0-9]*$")
 # Full set of ids allowed in the command registry: 10 actions + cancel (cp),
 # plus wake and noise. Registered via validate_registry (FR-016).
 REGISTRY_IDS = {"wake", "noise", "lm", "lb", "la", "gd", "gi", "p", "cp", "lpb", "lpa", "a", "cc"}
+
+# Synthetic data layout (T5.1). Synthetic clips are tagged `synthetic` by
+# directory (dataset/synthetic/<label>/) and by filename prefix `syn_`.
+SYNTHETIC = "synthetic"
+HOLDOUT = "holdout"
+SYNTHETIC_PREFIX = "syn_"
+
+
+def is_synthetic(path) -> bool:
+    """A clip is synthetic-tagged by filename prefix or by living under synthetic/."""
+    parts = Path(path).parts
+    return Path(path).name.startswith(SYNTHETIC_PREFIX) or SYNTHETIC in parts
+
+
+def registry_phrases(path: str = "model/registry.json") -> list[tuple[str, str]]:
+    """Return [(label, phrase)] for every registered phrase (wake + commands)."""
+    import json
+
+    with open(path, "r", encoding="utf-8") as fh:
+        reg = json.load(fh)
+    phrases: list[tuple[str, str]] = []
+    wake = reg.get("wake", {})
+    for phrase in wake.get("phrase", []):
+        phrases.append((wake.get("id", "wake"), phrase))
+    for cmd in reg.get("commands", []):
+        for phrase in cmd.get("phrase", []):
+            phrases.append((cmd["id"], phrase))
+    return phrases
 
 
 def _fail(msg):
@@ -116,6 +145,10 @@ def validate(path):
             failures.append(
                 (wav, f"{info['framerate']}Hz/{info['sampwidth'] * 8}bit/{info['channels']}ch")
             )
+        # NFR-005 hygiene: synthetic-tagged clips never enter the fresh hold-out.
+        parts = Path(wav).parts
+        if HOLDOUT in parts and is_synthetic(wav):
+            failures.append((wav, "synthetic-tagged clip in fresh hold-out"))
 
     print(f"checked {count} wav(s) under {path}")
     for wav, detail in failures:

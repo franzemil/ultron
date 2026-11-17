@@ -95,3 +95,63 @@ Files produced by these recorders are ready for `ultron dataset ingest`:
 - ext:  owner-supplied (phone/PC) recordings, tagged `ext`
 
 NFR-005: ≥ 20 originals per accepted phrase variant, recorded from all mics (xiao, pi, local).
+
+---
+
+## Synthetic data (T5.1) — `ultron synth tts` / `ultron synth noise`
+
+Machine-generated training audio, kept strictly supplementary per the
+lampara-aliz lesson:
+
+- Tagged `synthetic` by layout (`dataset/synthetic/<label>/`) and by filename
+  prefix (`syn_*`).
+- **NEVER enters the fresh hold-out** — `ultron dataset validate` fails if a
+  `syn_*` clip appears under `dataset/holdout/` (NFR-005 hygiene).
+- **Never counts toward NFR-005 original minimums** — synthetic is tracked
+  separately from originals.
+- **Training use is opt-in only** — synthetic clips enter training via
+  `--with-synthetic` (default **off**; the owner decides per run). Every use is
+  a changelog event.
+
+### `ultron synth tts`
+
+Renders **every registered phrase** (`model/registry.json`: wake + both forms of
+each of the 10 commands) in several Spanish TTS voices x speaking speeds,
+seeded — same seed => identical synthetic set:
+
+```
+ultron synth tts                                       # seed 42, mock engine offline (or `say` on macOS)
+ultron synth tts --seed 7 --engine say --voices Mónica,Paulina --speeds 0.9,1.0,1.1
+ultron synth tts --dry-run                             # lists every target, writes nothing
+ultron synth tts --output dataset/synthetic
+```
+
+Outputs are 16 kHz / 16-bit / mono WAV under `dataset/synthetic/<label>/`.
+
+### `ultron synth noise`
+
+Assembles room ambience and car/engine sounds for background mixing:
+
+```
+ultron synth noise                                     # 8 clips per source (room, car), 4 s each, seed 42
+ultron synth noise --sources room,car --count 10 --seconds 5 --seed 42
+ultron synth noise --dry-run                           # lists the assembly plan, writes nothing
+```
+
+Outputs under `dataset/synthetic/noise/<source>/`, 16 kHz / 16-bit / mono WAV.
+
+### Offline / no network TTS
+
+There is **no network TTS dependency** by default: on macOS the `say` engine
+(Spanish voices) is used offline; everywhere else, or with `--engine mock`, a
+deterministic seed-driven stand-in renders the clips. Tests run against the
+mock engine and skip `say`/ffmpeg-dependent cases when those tools are absent.
+
+### `ultron dataset validate`
+
+```
+ultron dataset validate dataset                        # default path: dataset/
+```
+
+Checks every clip is 16 kHz / 16-bit / mono and rejects synthetic-tagged clips
+in the fresh hold-out (exit non-zero, listing each violation).
