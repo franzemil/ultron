@@ -1,9 +1,10 @@
 """``ultron record`` — interactively record training WAVs from the host mic.
 
-Prompts the owner to select which command codes to record using a
-Rich-based checkbox interface, then records ``--seconds`` of 16 kHz /
-16-bit / mono audio per attempt until ``--samples`` examples exist per
-selected code. Writes ``{label}_local_{nn:02d}.wav`` under
+Prompts the owner to select which command codes to record using a Rich/questionary
+checkbox interface (space to toggle, Enter to confirm). Lists every registry code
+with its Spanish phrase and the number of examples already on disk, then records
+``--seconds`` of 16 kHz / 16-bit / mono audio per attempt until ``--samples``
+examples exist per selected code. Writes ``{label}_local_{nn:02d}.wav`` under
 ``dataset/originals/<label>/`` (mic tag ``local``), ready for
 ``ultron dataset ingest`` / ``validate``.
 
@@ -15,6 +16,7 @@ devices/esp32/wav_recorder/wav_recorder.ino) — same WAV contract, mic tag
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import wave
@@ -22,11 +24,10 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+import questionary
 import sounddevice as sd
 import typer
+from rich.console import Console
 
 from ultron.dataset import REGISTRY_IDS
 
@@ -36,6 +37,34 @@ SAMPLE_WIDTH = 2  # 16-bit int16
 DTYPE = "int16"
 
 console = Console()
+
+
+def _registry() -> dict:
+    """Load model/registry.json (id -> {phrase, sigla, ...})."""
+    path = Path("model/registry.json")
+    if not path.is_file():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _phrase_for(code: str, registry: dict) -> str:
+    """Return the display phrase for a code (Spanish), falling back to the id."""
+    entry = {}
+    if code == "wake":
+        entry = registry.get("wake", {})
+    elif code == "noise":
+        entry = registry.get("noise", {})
+    else:
+        for cmd in registry.get("commands", []):
+            if cmd.get("id") == code:
+                entry = cmd
+                break
+    phrases = entry.get("phrase") or [code]
+    return phrases[0] if phrases else code
 
 
 def _next_nn(label_dir: Path, label: str, mic: str) -> int:
@@ -115,61 +144,36 @@ def _existing_count(out_root: Path, label: str) -> int:
     label_dir = out_root / "originals" / label
     if not label_dir.is_dir():
         return 0
-    return len([p for p in label_dir.iterdir() if p.name.startswith(f"{label}_local_") and p.suffix == ".wav"])
+    return len(
+        [
+            p
+            for p in label_dir.iterdir()
+            if p.name.startswith(f"{label}_local_") and p.suffix == ".wav"
+        ]
+    )
 
 
-def _render_checkbox(codes: list[str], selected: set[str], out_root: Path, samples: int) -> str:
-    """Render the checkbox list as a Rich panel."""
-    lines = []
-    for i, code in enumerate(codes, start=1):
-        marked = "[x]" if code in selected else "[ ]"
+def _select_codes(codes: list[str], out_root: Path, samples: int, registry: dict) -> list[str]:
+    """Interactive checkbox selection (space toggles, Enter confirms).
+
+    Each choice shows the code, its Spanish phrase, and current samples / target.
+    """
+    choices = []
+    for code in codes:
         have = _existing_count(out_root, code)
-        need = max(0, samples - have)
-        lines.append(f"  {i:2d}. {marked} {code:<12} (need {need})")
-    body = "\n".join(lines)
-    hint = "[dim]Enter comma-separated numbers to toggle (e.g. 2,3,11), 'a' = all, 'n' = none, Enter = confirm[/dim]"
-    return Panel(body, title="Select codes to record", subtitle=hint, border_style="cyan")
-
-
-def _select_codes(codes: list[str], out_root: Path, samples: int) -> set[str]:
-    """Interactive checkbox selection of registry codes."""
-    selected: set[str] = set()
-    while True:
-        try:
-            console.clear()
-        except Exception:
-            pass
-        console.print(_render_checkbox(codes, selected, out_root, samples))
-        ans = Prompt.ask("> ").strip().lower()
-        if ans == "":
-            break
-        if ans == "a":
-            selected = set(codes)
-            continue
-        if ans == "n":
-            selected = set()
-            continue
-        toggled = False
-        for token in ans.split(","):
-            token = token.strip()
-            if not token:
-                continue
-            try:
-                idx = int(token) - 1
-            except ValueError:
-                console.print(f"[yellow]skip invalid token: {token}[/yellow]")
-                continue
-            if 0 <= idx < len(codes):
-                code = codes[idx]
-                if code in selected:
-                    selected.discard(code)
-                else:
-                    selected.add(code)
-                toggled = True
-            else:
-                console.print(f"[yellow]out of range: {token}[/yellow]")
-        if not toggled and ans not in ("a", "n"):
-            console.print("[dim]Press Enter to confirm selection.[/dim]")
+        phrase = _phrase_for(code, registry)
+        title = f"{code:<10} {phrase:<30} [{have}/{samples}]"
+        choices.append(
+            questionary.Choice(title=title, value=code, checked=(have < samples))
+        )
+    selected = questionary.checkbox(
+        "Select codes to record (SPACE to toggle, ENTER to confirm):",
+        choices=choices,
+    ).ask()
+    if selected is None:
+        # User aborted (Ctrl-C)
+        console.print("Aborted.")
+        sys.exit(0)
     return selected
 
 
@@ -187,10 +191,11 @@ def record_command(
     device_index = _pick_device(device)
     out_root = Path(out_dir)
 
+    registry = _registry()
     codes = sorted(REGISTRY_IDS)
     console.print("Recordable codes: " + ", ".join(codes))
 
-    selected = _select_codes(codes, out_root, samples)
+    selected = _select_codes(codes, out_root, samples, registry)
 
     if not selected:
         console.print("No codes selected. Nothing to record.")

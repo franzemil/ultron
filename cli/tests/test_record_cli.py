@@ -48,10 +48,27 @@ def load_record_module():
             return self
 
     fake_rich = SimpleNamespace(
-        Console=lambda *a, **k: SimpleNamespace(print=lambda *a, **k: None, clear=lambda *a, **k: None),
+        Console=lambda *a, **k: SimpleNamespace(print=lambda *a, **k: None),
         Confirm=SimpleNamespace(ask=lambda *a, **k: False),
         Prompt=SimpleNamespace(ask=lambda *a, **k: ""),
         panel=SimpleNamespace(Panel=_Panel),
+    )
+
+    class _Choice:
+        def __init__(self, title, value, checked=False):
+            self.title = title
+            self.value = value
+            self.checked = checked
+
+    class _Checkbox:
+        def __init__(self, result):
+            self._result = result
+        def ask(self):
+            return self._result
+
+    fake_questionary = SimpleNamespace(
+        Choice=_Choice,
+        checkbox=lambda *a, **k: _Checkbox(["lm", "wake"]),
     )
     with mock.patch.dict(
         sys.modules,
@@ -59,6 +76,7 @@ def load_record_module():
             "sounddevice": fake_sd,
             "numpy": np,
             "rich": fake_rich,
+            "questionary": fake_questionary,
             "rich.console": fake_rich,
             "rich.panel": fake_rich.panel,
             "rich.prompt": SimpleNamespace(
@@ -139,18 +157,15 @@ def test_record_command_stops_at_samples(mod, tmp_path):
 
     fake_recording = np.zeros(mod.SAMPLE_RATE * 2, dtype="<i2")
 
-    # Select only 'lm' (index 8) and 'wake' (index 13); stop after 2 samples each.
-    calls = []
-    def prompt_ask(prompt, default=None):
-        calls.append(prompt)
-        if prompt == "> ":
-            return "8,13" if len(calls) == 1 else ""
-        return ""
-
+    # Select 'lm' and 'wake' via checkbox; stop after 2 samples each.
     def fake_rec(*args, **kwargs):
         return fake_recording
 
-    with mock.patch.object(mod.Prompt, "ask", side_effect=prompt_ask), \
+    class _FakeCheckbox:
+        def ask(self):
+            return ["lm", "wake"]
+
+    with mock.patch.object(mod.questionary, "checkbox", side_effect=lambda *a, **k: _FakeCheckbox()), \
          mock.patch.object(mod.sd, "rec", fake_rec), \
          mock.patch.object(mod.sd, "wait"):
         mod.record_command(seconds=2, samples=2, device=None, out_dir=str(out_root))
