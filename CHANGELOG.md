@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- spec: approve requirements + design gates (002-can-think) (#20) — @franzemil
+
+## 2026-11-17
 - docs(spec): stage rollout, host inference + per-spec critical paths (#19) — @franzemil
 
 ## 2026-11-17
