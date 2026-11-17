@@ -20,6 +20,7 @@ from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, i
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
+from .features import FeaturesError, build_archive
 from . import synth, tts
 
 console = Console()
@@ -222,6 +223,50 @@ def dataset_import(
 ) -> None:
     """Import a dataset zip into <dest> (recordings back into the worktree)."""
     import_zip(zip_path=zip_path, dest=dest, force=force)
+
+
+@app.command(name="features")
+def features_command(
+    dataset: Path = typer.Option(
+        "dataset",
+        "--dataset",
+        "-d",
+        help="Dataset root: originals/ + augmented/ feed the archive; holdout/ "
+        "and takes/ never do.",
+    ),
+    out: Path = typer.Option(
+        "build/features.npz", "--out", "-o", help="Output archive path."
+    ),
+    with_synthetic: bool = typer.Option(
+        False,
+        "--with-synthetic",
+        help="Include dataset/synthetic/ clips (default off — the owner decides "
+        "per run; every use is a changelog event).",
+    ),
+) -> None:
+    """Extract MFCC features → build/features.npz (T7).
+
+    One compressed NumPy archive for the whole training set: float32 features
+    (one row per 2 s window), per-row label, source file path, and the split
+    hash training uses to reproduce its split. Features come from the shared
+    C MFCC binding — the same C bytes the devices run. NaN rows fail loudly
+    (FR-022). Re-running over the same tree produces a byte-identical file.
+    """
+    try:
+        summary = build_archive(
+            dataset_root=dataset, out_path=out, with_synthetic=with_synthetic
+        )
+    except FeaturesError as exc:
+        typer.secho(f"error: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"features: {summary['n_clips']} clips → {summary['n_rows']} windows "
+        f"→ {summary['out']}"
+    )
+    for label, n_clips in summary["clips_per_label"].items():
+        typer.echo(f"  {label}: {n_clips} clips / {summary['rows_per_label'][label]} windows")
+    typer.echo(f"split hash:    {summary['split_hash']}")
+    typer.echo(f"archive sha256: {summary['sha256']} ({summary['bytes']} bytes)")
 
 
 @app.command(name="config")
