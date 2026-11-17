@@ -59,7 +59,7 @@ class KwsNet(nn.Module):
         z = F.relu(self.conv1(z))
         z = F.max_pool1d(z, 2)
         z = F.relu(self.conv2(z))
-        z = F.adaptive_avg_pool1d(z, 1).squeeze(-1)  # global average pool
+        z = z.mean(dim=-1)  # global average pool — onnx2tf-safe (T9): GAP+Squeeze mis-transposes
         z = F.relu(self.fc1(z))
         return F.softmax(self.fc2(z), dim=1)
 

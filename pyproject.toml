@@ -5,6 +5,11 @@ description = "Ultron workspace root (cli + model packages)"
 requires-python = ">=3.11"
 dependencies = ["ultron", "ultron-model"]
 
+[project.optional-dependencies]
+# Heavy export chain (T9) — opt-in so the default dev sync stays light:
+#   uv sync --extra export
+export = ["ultron-model[export]"]
+
 [workspace]
 members = ["cli", "model"]
 
