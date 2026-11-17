@@ -16,7 +16,7 @@ console = Console()
 
 from .config import config
 from .logging import logger, setup_logging
-from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix
+from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
@@ -151,6 +151,29 @@ def dataset_dcfix(
 ) -> None:
     """Remove DC offset from every WAV under <path> (recenter waveform around zero)."""
     dc_fix(path=path)
+
+
+@dataset.command(name="export")
+def dataset_export(
+    path: str = typer.Argument("dataset", help="Dataset directory to zip (default dataset/)."),
+    out: str = typer.Option(
+        "dataset_export.zip", "--out", "-o", help="Output zip path."
+    ),
+) -> None:
+    """Zip the dataset so recordings survive beyond the worktree."""
+    export_zip(path=path, out=out)
+
+
+@dataset.command(name="import")
+def dataset_import(
+    zip_path: str = typer.Argument(..., help="Zip file produced by 'ultron dataset export'."),
+    dest: str = typer.Option("dataset", "--dest", "-d", help="Destination dataset directory."),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite existing files."
+    ),
+) -> None:
+    """Import a dataset zip into <dest> (recordings back into the worktree)."""
+    import_zip(zip_path=zip_path, dest=dest, force=force)
 
 
 @app.command(name="config")
