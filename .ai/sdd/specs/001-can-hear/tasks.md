@@ -68,7 +68,8 @@ criteria before the next begins.
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
   `docs/recording.md`.
 - Verify: XIAO records a 5 s WAV to SD (DONE response); Pi recorder writes a valid WAV
-  (`ultron dataset validate` passes it).
+  (`ultron dataset validate` passes it). **Deferred (D-012):** this on-device verify is optional
+  and moved to T7 — not required for the Milestone 1 gate.
 
 ### T5 — Seeded augmentation (2 h)
 - Covers: NFR-005. Deps: T3. Priority: Must.
@@ -119,3 +120,15 @@ stop and update the spec (never silently implement).
 - Checklist: `cli/src/ultron/record_long.py` — record-long subcommand (20 s continuous take, one label); `cli/src/ultron/split.py` — split subcommand using pyannote.audio VAD; slice segments into `{label}_local_<nn>.wav`; validate `--label` against registry; HF token handling; host-side tests with stubbed pyannote.
 - Likely files: `cli/src/ultron/record_long.py`, `cli/src/ultron/split.py`, `tests/test_record_long.py`, `tests/test_split.py`.
 - Verify: `uv run ultron record-long --help` exits 0; `uv run ultron split --help` exits 0; `uv run pytest tests/test_split.py` green; missing HF token fails fast; `--label` rejects unknown codes.
+
+### T7 — Hardware validation pass, XIAO + Pi (optional — deferred)
+- Covers: US-002 AC1/AC2 on-device pass (D-012). Deps: T2–T6 (all merged). Priority: **Optional —
+  deferred**; does **not** gate the Milestone 1 exit.
+- Run whenever a hardware session is convenient: flash `wav_recorder` on the XIAO; `rec {label}` →
+  5 s WAV on SD (DONE response); Pi `record.py` capture; `dataset ingest` + `ultron dataset
+  validate` on device recordings; MFCC parity on real WAVs; tick the deferred verify boxes in the
+  closed task issues.
+- Tracking: [issue #10](https://github.com/franzemil/ultron/issues/10) · draft PR #17 · branch
+  `franzemil/t7_hw_validation` (parked).
+- Verify: device-recorded WAVs pass `ultron dataset validate`; parity test green on features from
+  real recordings.
