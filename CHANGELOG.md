@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- docs(spec): stage rollout, host inference + per-spec critical paths (#19) — @franzemil
+
+## 2026-11-17
 - feat(dataset): synthetic TTS + noise generator (T5.1) (#16) — @franzemil
 
 ## 2026-11-17
