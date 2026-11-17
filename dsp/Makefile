@@ -12,6 +12,11 @@
 #     shared library (devices/orangepi/).
 #   - Cross-compile for the Pi runtime shared lib:
 #       make CC=aarch64-linux-gnu-gcc libmfcc.so
+#   - Windows hosts: use MinGW-w64 via MSYS2 (pacman -S mingw-w64-ucrt-x86_64-gcc
+#     make, run from an MSYS2 shell so sh/mkdir/rm exist). `make libmfcc.dll`
+#     produces build/libmfcc.dll — MinGW exports all symbols by default, so the
+#     C sources need no __declspec changes. WSL2 builds the POSIX targets
+#     unchanged.
 #
 # Outputs are placed in build/ (gitignored). Never commit build/.
 
@@ -24,18 +29,30 @@ SRC   := mfcc.c
 HDR   := mfcc.h
 OBJ   := build/mfcc.o
 LIB_A := build/libmfcc.a
-LIB_SO:= build/libmfcc.so
-TEST  := build/mfcc_test
+
+# Host-platform shaping: Windows (MinGW-w64) names its shared library
+# libmfcc.dll and appends .exe to executables; POSIX hosts keep libmfcc.so.
+ifeq ($(OS),Windows_NT)
+  EXE    := .exe
+  LIB_SO := build/libmfcc.dll
+else
+  EXE    :=
+  LIB_SO := build/libmfcc.so
+endif
+
+TEST  := build/mfcc_test$(EXE)
 TEST_SRC := mfcc_host_test.c
 
-.PHONY: all clean test libmfcc.a libmfcc.so mfcc_test
+.PHONY: all clean test libmfcc.a libmfcc.so libmfcc.dll mfcc_test
 
 # Documented contract: "make builds libmfcc.a + libmfcc.so + mfcc_test".
 # Real outputs live in build/; these are top-level aliases so that
-# `make -C dsp libmfcc.so` (and the .a / mfcc_test variants) work from
-# any checkout without path prefixes.
+# `make -C dsp libmfcc.so` (and the .a / .dll / mfcc_test variants) work
+# from any checkout without path prefixes. Each alias delegates to this
+# host's actual output (libmfcc.dll <-> build/libmfcc.dll on Windows).
 libmfcc.a: $(LIB_A)
 libmfcc.so: $(LIB_SO)
+libmfcc.dll: $(LIB_SO)
 mfcc_test: $(TEST)
 
 all: $(LIB_A) $(LIB_SO)
