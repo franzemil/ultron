@@ -28,7 +28,15 @@ LIB_SO:= build/libmfcc.so
 TEST  := build/mfcc_test
 TEST_SRC := mfcc_host_test.c
 
-.PHONY: all clean test
+.PHONY: all clean test libmfcc.a libmfcc.so mfcc_test
+
+# Documented contract: "make builds libmfcc.a + libmfcc.so + mfcc_test".
+# Real outputs live in build/; these are top-level aliases so that
+# `make -C dsp libmfcc.so` (and the .a / mfcc_test variants) work from
+# any checkout without path prefixes.
+libmfcc.a: $(LIB_A)
+libmfcc.so: $(LIB_SO)
+mfcc_test: $(TEST)
 
 all: $(LIB_A) $(LIB_SO)
 
