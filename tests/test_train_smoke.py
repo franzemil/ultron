@@ -138,17 +138,37 @@ def write_archive(
     return split_hash
 
 
-def run_train(archive: Path, dataset_root: Path, *extra: str):
-    return runner.invoke(
-        app,
-        [
-            "train", "run",
-            "--archive", str(archive),
-            "--holdout", str(dataset_root),
-            "--registry", str(REGISTRY),
-            *extra,
-        ],
-    )
+def run_train(archive: Path, dataset_root: Path, tmp: Path, *extra: str):
+    """Invoke `train run` with ALL outputs redirected under tmp (hermetic —
+    never the CLI's relative build/ defaults, which live in the repo root).
+    Explicit --out-* pairs in `extra` override the tmp defaults."""
+    skip = ("--out-checkpoint", "--out-report", "--out-holdout-md")
+    passthrough: list[str] = []
+    overrides: dict[str, str] = {}
+    i = 0
+    while i < len(extra):
+        if extra[i] in skip:
+            overrides[extra[i]] = extra[i + 1]
+            i += 2
+        else:
+            passthrough.append(extra[i])
+            i += 1
+    out = {
+        "--out-checkpoint": str(tmp / "ckpt.pt"),
+        "--out-report": str(tmp / "report.json"),
+        "--out-holdout-md": str(tmp / "holdout.md"),
+    }
+    out.update(overrides)
+    args = [
+        "train", "run",
+        "--archive", str(archive),
+        "--holdout", str(dataset_root),
+        "--registry", str(REGISTRY),
+        *passthrough,
+    ]
+    for flag, val in out.items():
+        args += [flag, val]
+    return runner.invoke(app, args)
 
 
 # ---- the model (dynamic C) --------------------------------------------------
@@ -180,6 +200,7 @@ def test_train_smoke_two_epochs_end_to_end(tmp_path: Path) -> None:
     result = run_train(
         archive,
         dataset,
+        tmp_path,
         "--epochs", "2",
         "--out-checkpoint", str(out_checkpoint),
         "--out-report", str(out_report),
@@ -218,7 +239,7 @@ def test_train_missing_noise_fails_naming_label(tmp_path: Path) -> None:
     archive = tmp_path / "features.npz"
     write_archive(archive, {"wake": N_WAKE, "la": N_LA, "lb": N_LB})
 
-    result = run_train(archive, dataset)
+    result = run_train(archive, dataset, tmp_path)
     assert result.exit_code == 1
     assert "missing required label(s): noise" in result.output
 
@@ -230,7 +251,7 @@ def test_train_missing_command_fails(tmp_path: Path) -> None:
     archive = tmp_path / "features.npz"
     write_archive(archive, {"wake": N_WAKE, "noise": N_NOISE})
 
-    result = run_train(archive, dataset)
+    result = run_train(archive, dataset, tmp_path)
     assert result.exit_code == 1
     assert "no command class" in result.output
     assert "la" in result.output  # registered commands are named as candidates
@@ -243,7 +264,7 @@ def test_nfr005_count_guard_names_short_label(tmp_path: Path) -> None:
     archive = tmp_path / "features.npz"
     write_archive(archive, {"wake": N_WAKE, "noise": N_NOISE, "la": 10, "lb": N_LB})
 
-    result = run_train(archive, dataset)
+    result = run_train(archive, dataset, tmp_path)
     assert result.exit_code == 1
     assert "insufficient original recordings" in result.output
     assert "la: have 10, need" in result.output
@@ -258,7 +279,7 @@ def test_nfr005_override_flag_records_deviation(tmp_path: Path) -> None:
     write_archive(archive, {"wake": N_WAKE, "noise": N_NOISE, "la": 10, "lb": N_LB})
     out_report = tmp_path / "report.json"
 
-    result = run_train(archive, dataset, "--epochs", "2", "--min-originals", "0",
+    result = run_train(archive, dataset, tmp_path, "--epochs", "2", "--min-originals", "0",
                        "--out-report", str(out_report))
     assert result.exit_code == 0, result.output
     report = json.loads(out_report.read_text())
@@ -275,7 +296,7 @@ def test_holdout_must_cover_trained_classes(tmp_path: Path) -> None:
     archive = tmp_path / "features.npz"
     write_archive(archive, CLASS_COUNTS)
 
-    result = run_train(archive, dataset)
+    result = run_train(archive, dataset, tmp_path)
     assert result.exit_code == 1
     assert "fresh hold-out is missing trained label(s): lb" in result.output
 
@@ -291,7 +312,7 @@ def test_synthetic_rows_only_with_flag(tmp_path: Path) -> None:
     write_archive(archive, CLASS_COUNTS, synthetic_counts={"la": 50})
     out_report = tmp_path / "report.json"
 
-    off = run_train(archive, dataset, "--epochs", "2", "--out-report", str(out_report))
+    off = run_train(archive, dataset, tmp_path, "--epochs", "2", "--out-report", str(out_report))
     assert off.exit_code == 0, off.output
     report_off = json.loads(out_report.read_text())
     assert report_off["dataset_counts"]["synthetic_rows_in_archive"] == 50
@@ -299,7 +320,7 @@ def test_synthetic_rows_only_with_flag(tmp_path: Path) -> None:
     assert report_off["dataset_counts"]["windows_per_label"]["la"] == N_LA
 
     on = run_train(
-        archive, dataset, "--epochs", "2", "--out-report", str(out_report),
+        archive, dataset, tmp_path, "--epochs", "2", "--out-report", str(out_report),
         "--with-synthetic",
     )
     assert on.exit_code == 0, on.output
@@ -325,6 +346,7 @@ def test_seed_rerun_same_split_and_metrics(tmp_path: Path) -> None:
         result = run_train(
             archive,
             dataset,
+            tmp_path,
             "--epochs", "6",
             "--out-report", str(out_report),
             "--out-checkpoint", str(out_ckpt),
@@ -344,7 +366,7 @@ def test_seed_rerun_same_sweep(tmp_path: Path) -> None:
     archive = tmp_path / "features.npz"
     write_archive(archive, CLASS_COUNTS)
     ckpt = tmp_path / "build" / "checkpoint.pt"
-    trained = run_train(archive, dataset, "--epochs", "4", "--out-checkpoint", str(ckpt))
+    trained = run_train(archive, dataset, tmp_path, "--epochs", "4", "--out-checkpoint", str(ckpt))
     assert trained.exit_code == 0, trained.output
 
     payloads = []
@@ -375,7 +397,7 @@ def test_sweep_writes_thresholds_for_trained_commands_only(tmp_path: Path) -> No
     archive = tmp_path / "features.npz"
     write_archive(archive, CLASS_COUNTS)
     ckpt = tmp_path / "checkpoint.pt"
-    trained = run_train(archive, dataset, "--epochs", "4", "--out-checkpoint", str(ckpt))
+    trained = run_train(archive, dataset, tmp_path, "--epochs", "4", "--out-checkpoint", str(ckpt))
     assert trained.exit_code == 0, trained.output
 
     out = tmp_path / "model" / "thresholds.json"
