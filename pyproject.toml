@@ -1,0 +1,18 @@
+[project]
+name = "ultron-workspace"
+version = "0.1.0"
+description = "Ultron workspace root (cli + model packages)"
+requires-python = ">=3.11"
+dependencies = ["ultron", "ultron-model"]
+
+[workspace]
+members = ["cli", "model"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+sources = { ultron = { path = "./cli" }, ultron-model = { path = "./model" } }
+
+[tool.setuptools]
+packages = []

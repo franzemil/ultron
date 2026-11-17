@@ -38,9 +38,14 @@ criteria before the next begins.
 
 ### T2 — uv workspace + CLI skeleton (2 h)
 - Covers: NFR-006. Deps: T1. Priority: Must.
-- Checklist: root `pyproject.toml` (uv workspace, members `cli/` + `model/`), `cli/pyproject.toml`
-  (package `ultron`, Typer), `model/pyproject.toml` (package `ultron-model`, workspace dependency
-  of cli), config loader (`.env`, EI key), logging setup, `ultron --help` works, pytest scaffold.
+- Checklist:
+  - [x] root `pyproject.toml` (uv workspace, members `cli/` + `model/`)
+  - [x] `cli/pyproject.toml` (package `ultron`, Typer)
+  - [x] `model/pyproject.toml` (package `ultron-model`, workspace dependency of cli)
+  - [x] config loader (`.env`, EI key)
+  - [x] logging setup
+  - [x] `ultron --help` works
+  - [x] pytest scaffold
 - Likely files: `pyproject.toml`, `cli/pyproject.toml`, `model/pyproject.toml`,
   `cli/src/ultron/cli.py`, `tests/test_cli.py`.
 - Verify: `uv sync && uv run ultron --help` exits 0; `uv run pytest` green.
