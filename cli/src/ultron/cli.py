@@ -64,7 +64,7 @@ def dataset_dcfix(
     )
 ) -> None:
     """Remove DC offset from every WAV under <path> (recenter waveform around zero)."""
-    dcfix(path=path)
+    dc_fix(path=path)
 
 
 @app.command(name="config")

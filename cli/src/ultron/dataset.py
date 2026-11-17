@@ -8,17 +8,25 @@ import shutil
 import sys
 import wave
 
+# Mic source tags allowed on `dataset ingest` (FR-020).
 VALID_MICS = {"xiao", "pi", "ext"}
+
+# Label slug rule: lowercase ASCII, must start with a letter (label slugs).
 LABEL_RE = re.compile(r"^[a-z][a-z0-9]*$")
+
+# Full set of ids allowed in the command registry: 10 actions + cancel (cp),
+# plus wake and noise. Registered via validate_registry (FR-016).
 REGISTRY_IDS = {"wake", "noise", "lm", "lb", "la", "gd", "gi", "p", "cp", "lpb", "lpa", "a", "cc"}
 
 
 def _fail(msg):
+    """Print an error message to stderr and exit non-zero."""
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
 def _iter_wavs(root):
+    """Yield every .wav path under <root>, walking the filesystem tree."""
     for dirpath, _dirs, files in os.walk(root):
         for name in sorted(files):
             if name.lower().endswith(".wav"):
@@ -26,6 +34,7 @@ def _iter_wavs(root):
 
 
 def _wav_info(path):
+    """Return a dict of WAV parameters (channels, sampwidth, framerate, nframes)."""
     with wave.open(path, "rb") as w:
         return {
             "channels": w.getnchannels(),
@@ -36,6 +45,7 @@ def _wav_info(path):
 
 
 def _next_nn(label_dir, label, mic):
+    """Return the next free two-digit sequence number for {label}_{mic}_{nn}.wav."""
     prefix = f"{label}_{mic}_"
     best = 0
     for name in os.listdir(label_dir):
@@ -51,7 +61,11 @@ def _next_nn(label_dir, label, mic):
 
 
 def ingest(source, label, mic, dest):
-    """Copy and label WAVs from ANY source into dataset/originals/<label>/."""
+    """Copy and label WAVs from ANY source into dataset/originals/<label>/.
+
+    FR-020: device recordings and owner-supplied external recordings alike,
+    tagging the mic source in the filename (lm_xiao_01.wav / lm_ext_01.wav).
+    """
     if mic not in VALID_MICS:
         _fail(f"invalid mic '{mic}'; must be one of {sorted(VALID_MICS)}")
     if not LABEL_RE.match(label):
@@ -75,7 +89,11 @@ def ingest(source, label, mic, dest):
 
 
 def validate(path):
-    """Return exit code: 0 if all wavs are 16 kHz/16-bit/mono, 1 if any fail."""
+    """Return exit code: 0 if all wavs are 16 kHz/16-bit/mono, 1 if any fail.
+
+    FR-021: check every clip is 16 kHz/16-bit/mono; exit non-zero listing
+    each failing file. A nonexistent path returns exit code 2.
+    """
     if not os.path.isdir(path):
         print(f"error: not a directory: {path}", file=sys.stderr)
         return 2
@@ -109,8 +127,16 @@ def validate(path):
     return 0
 
 
-def dcfix(path):
-    """Remove DC offset (subtract mean) from every WAV under <path>, in place."""
+def dc_fix(path):
+    """Remove DC offset (subtract mean) from every WAV under <path>, in place.
+
+    FR-022: microphones can add a constant voltage to every sample, shifting
+    the waveform away from zero. Subtracting that constant (the mean) recenters
+    the signal before feature extraction so MFCC features are not computed on
+    a skewed signal (lampara-aliz lesson: no silent training on corrupt data).
+
+    Non-16-bit or unreadable files are skipped with a stderr warning.
+    """
     count = 0
     for wav in _iter_wavs(path):
         try:
@@ -149,6 +175,7 @@ def dcfix(path):
 # registry.json schema + validator (FR-016)
 # ---------------------------------------------------------------------------
 
+# Top-level keys required in model/registry.json (versioned; D-005).
 REGISTRY_SCHEMA = {
     "required": {"version", "language", "wake", "noise", "commands", "cap"},
     "command_fields": {
@@ -156,12 +183,18 @@ REGISTRY_SCHEMA = {
     },
 }
 
+# The 10 action command ids (cancel `cp` is handled separately below).
 ACTION_IDS = {"lm", "lb", "la", "gd", "gi", "p", "lpb", "lpa", "a", "cc"}
 CANCEL_ID = "cp"
 
 
 def validate_registry(path="model/registry.json"):
-    """Validate registry.json against the FR-016 schema. Returns (ok, errors)."""
+    """Validate registry.json against the FR-016 schema. Returns (ok, errors).
+
+    Enforces: version 2, language "es", wake + noise entries, exactly the
+    10 action commands plus cancel (cp), each with id/sigla/phrase/behavior/
+    channels, and cap.actions == 10 / cap.model_classes == 13.
+    """
     import json
 
     errors = []

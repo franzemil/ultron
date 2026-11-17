@@ -6,7 +6,7 @@ import wave
 
 import pytest
 
-from ultron.dataset import ingest, validate, dcfix, validate_registry
+from ultron.dataset import ingest, validate, dc_fix, validate_registry
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 VALID_DIR = os.path.join(FIXTURES, "valid")
@@ -73,7 +73,7 @@ def test_dcfix_recenters_waveform(tmp_path):
         w.setnchannels(nch); w.setsampwidth(sw); w.setframerate(fs)
         w.writeframes(shifted.tobytes())
 
-    dcfix(tmp_path)
+    dc_fix(tmp_path)
 
     with wave.open(dst, "rb") as w:
         frames = w.readframes(w.getnframes())
