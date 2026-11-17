@@ -139,15 +139,27 @@ def _load_pipeline(hf_token: Optional[str]):
         console.print("[red]pyannote.audio not installed.[/red]")
         console.print("pip install pyannote.audio")
         raise typer.Exit(code=2)
-    try:
-        pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, use_auth_token=token)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Failed to load pyannote VAD model: {exc}[/red]")
-        if token is None:
-            console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
-        console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
-        raise typer.Exit(code=2)
-    return pipeline
+    # Try the new API first (pyannote.audio 2.x+: hf_token), fall back to old (use_auth_token).
+    load_kwargs_list = [{"hf_token": token} if token else {}, {"use_auth_token": token} if token else {}, {}]
+    last_exc = None
+    for kwargs in load_kwargs_list:
+        try:
+            pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, **kwargs)
+            return pipeline
+        except TypeError as exc:
+            if "use_auth_token" in str(exc) or "hf_token" in str(exc):
+                last_exc = exc
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            break
+
+    console.print(f"[red]Failed to load pyannote VAD model: {last_exc}[/red]")
+    if token is None:
+        console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
+    console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
+    raise typer.Exit(code=2)
 
 
 def split_command(
