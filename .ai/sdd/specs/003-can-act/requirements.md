@@ -12,11 +12,16 @@ machine, relay outputs) and the Orange Pi Zero 2W Python runtime implement the i
 two-stage interaction — wake on **"hey ultron"** → "Escuchando" playback → 5 s command window →
 event or timeout — driving 9 relay channels (LM LB LA GD GI LPB LPA A CC) per the Actuation
 Behavior Contract, and confirm wake acceptance by speaking. Both targets run the same model
-flatbuffer and emit identical event semantics; any divergence is a bug (AGENTS rule 5).
+flatbuffer and emit identical event semantics; any divergence is a bug (AGENTS rule 5). Work is
+staged (PLAN.md rollout phases): **Stage A** deploys the minimal 4-class model (`wake`, `noise`,
+`la`, `lb`, spec 002 TD-012) with events + feedback only, **Stage B** wires the relays for that
+minimal set, and **Stage C** rolls out one command per cycle until the full registry is
+recognized.
 
 ## Goals
 
-1. Both devices pass the US-001 interaction script end-to-end (wake → command → actuation).
+1. Both devices pass the US-001 interaction script end-to-end on the **currently rolled-out**
+   command set (Stage A: `la`; Stage C: every command; actuation from Stage B on).
 2. Wake acceptance is confirmed audibly with "Escuchando", identically on both targets.
 3. Identical events, timing tolerances, and boot-safe outputs on XIAO and Pi.
 
@@ -34,8 +39,9 @@ flatbuffer and emit identical event semantics; any divergence is a bug (AGENTS r
 **so that** the device performs the mapped action without touching anything.
 
 **Acceptance criteria:**
-- **AC1:** Saying "hey ultron" then "enciende guiñador derecho" produces a `CMD` event for `gd`
-  and starts its mapped behavior (GD blinking 1 s on / 1 s off for 45 s).
+- **AC1:** Saying "hey ultron" then "enciende luz alta" (a command of the initially trained
+  set) produces a `CMD` event for `la` and starts its mapped behavior (LM+LB+LA steady ON).
+  Stage C re-runs this same script for each rolled-out command (T16–T24).
 - **AC2:** Saying a command phrase alone (no wake) produces no command event and no action.
 - **AC3:** Saying "hey ultron" then nothing for 5 s produces a `TIMEOUT` event and the device
   returns to wake-listening.
@@ -68,7 +74,8 @@ THE SYSTEM SHALL enter command-listening state within 1.5 s (XIAO) / 1.0 s (Pi) 
 utterance.
 
 **FR-002 (Must)** — WHILE in command-listening state, THE SYSTEM SHALL evaluate incoming audio
-against the command registry for up to 5 s.
+against the trained command set for up to 5 s (recognized labels = trained subset — FR-013/FR-032,
+spec 002).
 
 **FR-003 (Must)** — WHEN a command window scores ≥ its command threshold AND ≥ margin over every
 other class, THE SYSTEM SHALL emit a command event carrying the command ID and confidence.
@@ -154,6 +161,8 @@ budget (≤ 1.5 s XIAO / ≤ 1.0 s Pi).
   powered speaker (owner-supplied). "Escuchando" is a repo-committed TTS clip; no runtime TTS.
 - Runtime capture mics as in the shared context (XIAO PDM, Pi USB mic).
 - Mics and speakers must be physically present before Milestone 3 work starts (PLAN.md hardware logistics).
+- Initial deployment model = the 4-class artifact (`wake`, `noise`, `la`, `lb` — spec 002
+  TD-012); the recognized set grows to the full registry as Stage C rollout cycles complete.
 
 ## Decisions
 
@@ -193,8 +202,9 @@ playback end (FR-019, NFR-010). No other spoken feedback in v1.
 
 ## Success Metrics
 
-- **Milestone 3 — "can act"**: both devices pass the two-stage interaction script end-to-end with correct
-  output behaviors and feedback timing (FR-001…FR-009, FR-017…FR-019, NFR-010).
+- **Milestone 3 — "can act"**: Stage A — both devices emit contract events for the minimal model;
+  Stage B — the minimal set drives real channels; Stage C — every rolled-out command is
+  recognized and actuated (FR-001…FR-009, FR-017…FR-019, NFR-010).
 
 ## Risks
 

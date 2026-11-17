@@ -10,7 +10,8 @@
 Milestone 5 closes the loop: one command uploads the dataset and the current model artifacts to a dedicated
 Edge Impulse project as a one-way archive, and the release bookkeeping lands (docs complete,
 CHANGELOG verified as PR-generated). Local artifacts are byte-identical before and after — the
-sync never downloads or overwrites anything (AGENTS rule 3).
+sync never downloads or overwrites anything (AGENTS rule 3). By this milestone the full phrase
+set is rolled out (spec 003 Stage C), so the archived model is the complete artifact.
 
 ## Goals
 

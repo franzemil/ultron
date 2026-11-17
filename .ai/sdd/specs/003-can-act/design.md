@@ -7,6 +7,9 @@ interpreter (artifacts from spec 002) → a three-state machine (`WAKE_LISTEN`, 
 `LISTENING`) → event sink + feedback player + output controller with 9 relay channels — with only
 the box implementations differing: Arduino/ESP32 C++ firmware on the XIAO, Python (`tflite_runtime`
 + `sounddevice` + libgpiod) on the Pi. Identical semantics are an AGENTS rule 5 invariant.
+Deployment is staged (PLAN.md rollout phases): Stage A ships the minimal 4-class model (`wake`,
+`noise`, `la`, `lb`) with events + feedback only, Stage B adds relay actuation for that set,
+Stage C rolls out one command per cycle.
 
 ## Requirements mapping
 
@@ -27,7 +30,7 @@ the box implementations differing: Arduino/ESP32 C++ firmware on the XIAO, Pytho
 flowchart TB
     MIC["microphone"] --> CAP["capture<br/>int16 @ 16 kHz<br/>2 s ring buffer / 500 ms hop"]
     CAP --> DSP["MFCC — shared C dsp/mfcc (spec 001)<br/>features 100 x 13"]
-    DSP --> TFL["TFLite interpreter<br/>same .tflite on both targets (spec 002)<br/>scores: noise, wake, 11 commands"]
+    DSP --> TFL["TFLite interpreter<br/>same .tflite on both targets (spec 002)<br/>scores: noise, wake, trained command set<br/>(initial: la, lb — full registry after Stage C)"]
     TFL --> SM["state machine<br/>WAKE_LISTEN, CONFIRMING, LISTENING"]
     SM --> EVT["event sink<br/>serial lines (XIAO) - JSON lines (Pi)"]
     SM --> FB["feedback player<br/>fixed 'Escuchando' clip"]
@@ -137,12 +140,12 @@ pauses for outputs.
 
 | Item | Budget | Estimated actual | Confirmed by |
 |---|---|---|---|
-| int8 model (flash) | ≤ 100 KB | ~6 KB (≈3K params: 13-class head adds only ~160 B vs 3-class) | spec 002 T9 (export size report) |
-| "Escuchando" clip (flash) | — | ~16 KB (500 ms, 16 kHz int16 mono) | T15 playback verified |
-| TFLM arena | ≤ 150 KB | ~16–32 KB | T10b (arena stats) |
+| int8 model (flash) | ≤ 100 KB | ~5–6 KB (≈3K params: int8 head ≈16 B per trained command, C = 2 + N) | spec 002 T9 (export size report) |
+| "Escuchando" clip (flash) | — | ~16 KB (500 ms, 16 kHz int16 mono) | T14 playback verified |
+| TFLM arena | ≤ 150 KB | ~16–32 KB | T12 (arena stats) |
 | Audio ring buffer (2 s int16 @16 kHz) | 64 KB | 64 KB | — |
 | MFCC work area | ≤ 8 KB | ~8 KB | spec 001 T6 |
-| **Total RAM (inference path)** | **≤ 240 KB** | **~95–110 KB** of 512 KB internal SRAM | T10b/T12 logs |
+| **Total RAM (inference path)** | **≤ 240 KB** | **~95–110 KB** of 512 KB internal SRAM | T12/T25 logs |
 
 Estimates are arithmetic from the design architecture; the "Confirmed by" column turns them into
 measured facts before tasks complete. Splitting into two models would *increase* RAM (two arenas)
@@ -151,7 +154,7 @@ measured facts before tasks complete. Splitting into two models would *increase*
 ## Technical decisions
 
 **TD-004 — XIAO runs TFLite-Micro from the Arduino/ESP32 ecosystem** (e.g. `TensorFlowLite_ESP32`
-library or vendored `esp-tflite-micro`; spike T10a, spec 002, decides). Alternatives: reusing the
+library or vendored `esp-tflite-micro`; spike T11, spec 002, decides). Alternatives: reusing the
 EI library shell as runtime (rejected: EI is export-only); ESP-IDF rewrite (rejected: abandons
 the proven arduino-cli workflow for no inference benefit). `AllOpsResolver` keeps the flatbuffer
 portable.
@@ -186,6 +189,7 @@ asked for spoken "Escuchando").
 | On-device | Audio feedback | WAKE → clip timing on both devices: start ≤ 200 ms, duration ≤ 500 ms (NFR-010) |
 | On-device | Boot safety | all channels OFF at boot/reset (NFR-009); `SPK_INIT_FAILED` on missing output |
 | On-device | Inference latency | ≤ 400 ms XIAO / ≤ 200 ms Pi logged (NFR-001) |
+| On-device | Stage C rollout | each new label recognized + actuated on both devices (T16–T24) |
 
 ## Observability
 

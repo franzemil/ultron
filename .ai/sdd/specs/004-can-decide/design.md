@@ -19,11 +19,13 @@ Human operator only timestamps utterances; everything else is machine-parsed int
 
 ## Protocol
 
-Scripted, sequential (Q-004), per device (FR-014, US-005):
+Scripted, sequential (Q-004), per device (FR-014, US-005). Precondition: the full phrase set is
+rolled out (spec 003 Stage C complete).
 
 1. **Latency**: 20 wake utterances → measure end-of-utterance → `WAKE` (via `t_ms` deltas +
    operator timestamping protocol in `docs/bench.md`).
-2. **Accuracy**: each command × 10 live utterances → confusion matrix from event log.
+2. **Accuracy**: each command of the full rolled-out set × 10 live utterances → confusion
+   matrix from event log.
 3. **False accepts**: 30 min ambient listening → count false `WAKE` (target ≤ 1) and false `CMD`
    (target 0) (NFR-004). Speaker stays live — a false wake plays "Escuchando", as it would in
    deployment.

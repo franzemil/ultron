@@ -92,3 +92,4 @@ Python packaging is a **uv workspace**: the root `pyproject.toml` declares membe
 - Output behaviors enum (spec 001): `steady`, `blink_45s`, `blink_until_cancel`, `cancel`,
   `motor`, `pulse_2s`, `pulse_05s`.
 - Stable IDs everywhere: US-001, FR-001, NFR-001, D-001, TD-001, Q-001, T1.
+- Task sub-IDs use **decimal** suffixes (`T5.1` is the only current one) — never letters.
