@@ -21,6 +21,7 @@ from unittest import mock
 import numpy as np
 import pytest
 import typer
+import questionary
 from ultron.record_long import SAMPLE_RATE
 
 CLI_PY = Path(__file__).resolve().parents[1] / "src" / "ultron" / "cli.py"
@@ -59,6 +60,69 @@ def test_record_split_unknown_label(mod):
     with pytest.raises(typer.Exit) as exc:
         mod.record_split_command(seconds=2, label="not_a_code", device=None, out_dir="/tmp/ds")
     assert exc.value.exit_code == 2
+
+
+def test_record_split_picker(mod, tmp_path, monkeypatch):
+    """When label is omitted, questionary picker is used to select a code."""
+    out_root = tmp_path / "dataset"
+    monkeypatch.setenv("PYANNOTE_HF_TOKEN", "fake-token")
+
+    # Stub questionary.select to return "wake"
+    class _FakeSelectResult:
+        def ask(self):
+            return "wake"
+
+    def fake_select(prompt, choices=None, **kwargs):
+        return _FakeSelectResult()
+
+    fake_recording = np.zeros(SAMPLE_RATE * 3, dtype="<i2")
+
+    class _FakeTimeline:
+        def __init__(self, segments):
+            self._segments = segments
+        def support(self):
+            return self._segments
+
+    class _FakeVadResult:
+        def __init__(self, segments):
+            self._timeline = _FakeTimeline(segments)
+        def get_timeline(self):
+            return self._timeline
+
+    class _FakePipeline:
+        def __init__(self, segments):
+            self._segments = segments
+        def __call__(self, waveform):
+            return _FakeVadResult(self._segments)
+
+    fake_pipeline = _FakePipeline([(0.5, 1.0)])
+    fake_pyannote = SimpleNamespace(
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+    )
+
+    def fake_rec(*args, **kwargs):
+        return fake_recording
+
+    with mock.patch.dict(sys.modules, {
+        "pyannote.audio": fake_pyannote,
+        "pyannote": SimpleNamespace(audio=fake_pyannote),
+    }),          mock.patch.object(mod.questionary, "select", side_effect=fake_select),          mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "rec", fake_rec),          mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "wait"):
+        mod.record_split_command(seconds=3, label=None, device=None, hf_token="tok", out_dir=str(out_root))
+
+    # Should have recorded and split for "wake"
+    takes = sorted(out_root.glob("takes/take_*_wake.wav"))
+    assert len(takes) == 1, takes
+
+    segments = sorted(out_root.glob("originals/wake/wake_local_*.wav"))
+    assert len(segments) == 1, segments
+    assert segments[0].name == "wake_local_01.wav"
+
+    for wav in segments:
+        with wave.open(str(wav), "rb") as w:
+            assert w.getframerate() == 16000
+            assert w.getsampwidth() == 2
+            assert w.getnchannels() == 1
+            assert w.getnframes() > 0
 
 
 def test_record_split_end_to_end(mod, tmp_path):

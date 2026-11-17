@@ -9,16 +9,17 @@ from __future__ import annotations
 
 from typing import Optional
 
+import questionary
 import typer
 from rich.console import Console
 console = Console()
 
 from .config import config
 from .logging import logger, setup_logging
-from ultron.dataset import ingest, validate, dc_fix
+from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix
 from ultron.record import record_command
 from ultron.record_long import record_long_command
-from ultron.split import split_command
+from ultron.split import _phrase_for, _registry, split_command
 
 app = typer.Typer(
     name="ultron",
@@ -36,10 +37,34 @@ app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
 
 
+def _pick_label(registry: dict) -> str:
+    """Interactive rich prompt picker: choose a label to record.
+
+    Shows each registry code with its Spanish phrase.
+    """
+    codes = sorted(REGISTRY_IDS)
+    choices = []
+    for code in codes:
+        phrase = _phrase_for(code, registry)
+        choices.append(
+            questionary.Choice(title=f"{code:<10} {phrase}", value=code)
+        )
+    selected = questionary.select(
+        "Select a label to record:",
+        choices=choices,
+    ).ask()
+    if selected is None:
+        console.print("Aborted.")
+        raise typer.Exit(code=0)
+    return selected
+
+
 @app.command(name="record-split")
 def record_split_command(
     seconds: float = typer.Option(20.0, "--seconds", "-s", help="Seconds to record (default 20)."),
-    label: str = typer.Argument(..., help="Label slug (registry id, e.g. lb, wake, noise)."),
+    label: Optional[str] = typer.Argument(
+        None, help="Label slug (registry id, e.g. lb, wake, noise). Prompted if omitted."
+    ),
     device: Optional[str] = typer.Option(
         None, "--device", "-d", help="Input device index or name substring."
     ),
@@ -55,10 +80,18 @@ def record_split_command(
     Records --seconds of audio as a take, runs pyannote.audio VAD on it, and
     writes each speech segment as {label}_local_<nn>.wav under
     dataset/originals/<label>/. Single label per take; no STT needed.
+
+    If --label is omitted, an interactive prompt lets you pick from the
+    registry codes (with Spanish phrases).
     """
     from pathlib import Path
 
     from ultron.dataset import REGISTRY_IDS
+
+    registry = _registry()
+
+    if label is None:
+        label = _pick_label(registry)
 
     if label not in set(REGISTRY_IDS):
         console.print(f"[red]Unknown label '{label}'.[/red]")

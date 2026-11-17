@@ -49,6 +49,22 @@ def _registry() -> dict:
         return {}
 
 
+def _phrase_for(code: str, registry: dict) -> str:
+    """Return the display phrase for a code (Spanish), falling back to the id."""
+    entry = {}
+    if code == "wake":
+        entry = registry.get("wake", {})
+    elif code == "noise":
+        entry = registry.get("noise", {})
+    else:
+        for cmd in registry.get("commands", []):
+            if cmd.get("id") == code:
+                entry = cmd
+                break
+    phrases = entry.get("phrase") or [code]
+    return phrases[0] if phrases else code
+
+
 def _validate_label(label: str, registry: dict) -> None:
     """Reject labels not in registry.json (FR-030)."""
     valid = set(REGISTRY_IDS)
