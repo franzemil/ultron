@@ -72,6 +72,13 @@ def train_run(
         help="Include synthetic-tagged archive rows (default off — owner decides "
         "per run; every use is a changelog event, spec 001 T5.1).",
     ),
+    min_originals: int = typer.Option(
+        -1,
+        "--min-originals",
+        help="Override the NFR-005 per-label originals minimum with this value "
+        "(0 skips the check). Default -1 = registry-derived minimums with a "
+        "hard fail naming short labels. Deviation is recorded in the report.",
+    ),
 ) -> None:
     """Train the KWS model from the T7 archive + score the fresh hold-out.
 
@@ -104,6 +111,7 @@ def train_run(
             lr=lr,
             patience=patience,
             with_synthetic=with_synthetic,
+            min_originals=None if min_originals < 0 else min_originals,
         )
         t8.write_checkpoint(out_checkpoint, checkpoint)
         t8.write_json(out_report, report)

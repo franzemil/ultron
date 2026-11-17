@@ -238,16 +238,25 @@ def originals_clip_counts(labels: Sequence[str], paths: Sequence[str]) -> dict[s
     return dict(sorted(Counter(label for label, _ in clips).items()))
 
 
-def check_nfr005(counts: dict[str, int], classes: Sequence[str], reg: dict) -> dict:
+def check_nfr005(
+    counts: dict[str, int], classes: Sequence[str], reg: dict, min_originals: Optional[int] = None
+) -> dict:
     """Validate per-label originals against registry-derived variant minimums.
 
     Returns the minimums dict for the report. Raises TrainError naming every
     short label with its count and minimum (variants × MIN_PER_VARIANT for
     commands; WAKE_NOISE_MIN for wake/noise).
+
+    ``min_originals`` is the explicit per-run override (NFR-005 deviation,
+    owner decides per run — same policy as --with-synthetic): every label's
+    minimum becomes that value (0 skips the check entirely). The deviation is
+    recorded in the report via ``nfr005_overridden``.
     """
     minimums: dict[str, int] = {}
     for label in classes:
-        if label in ("wake", "noise"):
+        if min_originals is not None:
+            minimums[label] = min_originals
+        elif label in ("wake", "noise"):
             minimums[label] = WAKE_NOISE_MIN
         else:
             variants = registry_phrase_count(reg, label) or 1
@@ -609,6 +618,7 @@ def run_training(
     lr: float = LEARNING_RATE,
     patience: int = PATIENCE,
     with_synthetic: bool = False,
+    min_originals: Optional[int] = None,
 ) -> tuple[dict, KwsNet, dict]:
     """Full T8 training pass → (report, trained model, checkpoint payload).
 
@@ -625,7 +635,7 @@ def run_training(
 
     classes = derive_class_set(labels, reg)
     counts = originals_clip_counts(labels, paths)
-    minimums = check_nfr005(counts, classes, reg)
+    minimums = check_nfr005(counts, classes, reg, min_originals=min_originals)
 
     holdout_guard(holdout, classes)
 
@@ -672,6 +682,7 @@ def run_training(
             "holdout_originals_per_label": dict(sorted(holdout["clips_per_label"].items())),
         },
         "nfr005_minimums": minimums,
+        "nfr005_overridden": min_originals is not None,
         # val numbers are memorization context only (NFR-003 honesty rule)
         "val_memorization_context": val_report,
         "holdout_fresh": holdout_report,

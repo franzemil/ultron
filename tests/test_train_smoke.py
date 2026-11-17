@@ -250,6 +250,22 @@ def test_nfr005_count_guard_names_short_label(tmp_path: Path) -> None:
     assert "40" in result.output  # 2 variants × 20 (registry-derived)
 
 
+def test_nfr005_override_flag_records_deviation(tmp_path: Path) -> None:
+    """--min-originals 0 skips the count guard; the report records it."""
+    dataset = tmp_path / "dataset"
+    build_holdout_tree(dataset)
+    archive = tmp_path / "features.npz"
+    write_archive(archive, {"wake": N_WAKE, "noise": N_NOISE, "la": 10, "lb": N_LB})
+    out_report = tmp_path / "report.json"
+
+    result = run_train(archive, dataset, "--epochs", "2", "--min-originals", "0",
+                       "--out-report", str(out_report))
+    assert result.exit_code == 0, result.output
+    report = json.loads(out_report.read_text())
+    assert report["nfr005_overridden"] is True
+    assert report["nfr005_minimums"] == {"wake": 0, "noise": 0, "lb": 0, "la": 0}
+
+
 def test_holdout_must_cover_trained_classes(tmp_path: Path) -> None:
     """NFR-003 honesty: no fresh hold-out for a trained label → loud failure."""
     dataset = tmp_path / "dataset"
