@@ -257,6 +257,42 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _clip_rows(root: Path, label: str, clip_paths, mfcc: Mfcc) -> tuple[list[_Row], list[str]]:
+    """Rows for the given clips: DC-corrected C-MFCC windows + NaN failures.
+
+    Short clips yield one zero-padded window (see :func:`_window_starts`).
+    NaN rows are returned as failure strings (caller decides when to raise
+    — build_archive collects across ALL clips first so the error names every
+    corrupt file, FR-022: no silent training on corrupt data).
+    """
+    rows: list[_Row] = []
+    nan_failures: list[str] = []
+    for path in clip_paths:
+        rel = path.relative_to(root).as_posix()
+        samples = _dc_correct(_load_wav(path, rel))
+        for start in _window_starts(len(samples)):
+            if len(samples) < WINDOW_LEN:  # short clip: one padded window
+                window = np.zeros(WINDOW_LEN, dtype=np.int16)
+                window[: len(samples)] = samples
+            else:
+                window = samples[start : start + WINDOW_LEN]
+            feats = _window_features(window, mfcc)
+            if np.isnan(feats).any():
+                nan_failures.append(f"{rel} @ {start / SAMPLE_RATE:.2f}s")
+                continue
+            rows.append(_Row(label=label, path=rel, start=start, features=feats))
+    return rows, nan_failures
+
+
+def _nan_error(nan_failures: list[str]) -> FeaturesError:
+    shown = nan_failures[:10]
+    more = "" if len(nan_failures) <= 10 else f" (+{len(nan_failures) - 10} more)"
+    return FeaturesError(
+        "NaN feature row(s) — refusing to train on corrupt data (FR-022, "
+        f"spec 001): {', '.join(shown)}{more}"
+    )
+
+
 def build_archive(
     dataset_root: Path | str = "dataset",
     out_path: Path | str = "build/features.npz",
@@ -294,30 +330,15 @@ def build_archive(
 
     try:
         for label, path in clips:
-            rel = path.relative_to(root).as_posix()
-            samples = _dc_correct(_load_wav(path, rel))
-            for start in _window_starts(len(samples)):
-                if len(samples) < WINDOW_LEN:  # short clip: one padded window
-                    window = np.zeros(WINDOW_LEN, dtype=np.int16)
-                    window[: len(samples)] = samples
-                else:
-                    window = samples[start : start + WINDOW_LEN]
-                feats = _window_features(window, mfcc)
-                if np.isnan(feats).any():
-                    nan_failures.append(f"{rel} @ {start / SAMPLE_RATE:.2f}s")
-                    continue
-                rows.append(_Row(label=label, path=rel, start=start, features=feats))
+            clip_rows, nan = _clip_rows(root, label, [path], mfcc)
+            rows.extend(clip_rows)
+            nan_failures.extend(nan)
     finally:
         if own_mfcc and mfcc is not None:
             mfcc.close()
 
     if nan_failures:
-        shown = nan_failures[:10]
-        more = "" if len(nan_failures) <= 10 else f" (+{len(nan_failures) - 10} more)"
-        raise FeaturesError(
-            "NaN feature row(s) — refusing to train on corrupt data (FR-022, "
-            f"spec 001): {', '.join(shown)}{more}"
-        )
+        raise _nan_error(nan_failures)
 
     arrays = {
         "features": np.stack([r.features for r in rows]).astype(np.float32),
@@ -338,4 +359,95 @@ def build_archive(
         "split_hash": arrays["split_hash"].item(),
         "sha256": _sha256_file(out),
         "bytes": out.stat().st_size,
+    }
+
+
+def extract_holdout(
+    dataset_root: Path | str = "dataset",
+    labels: Optional[set[str]] = None,
+    mfcc: Optional[Mfcc] = None,
+) -> dict:
+    """Extract fresh hold-out windows for training-time scoring (T8, NFR-003).
+
+    Walks ``dataset/holdout/<label>/`` — the structurally isolated fresh
+    hold-out (spec 001) that NEVER enters the archive — with exactly the same
+    DC-corrected C-MFCC windowing path as :func:`build_archive`. NaN rows
+    fail loudly (FR-022) and synthetic-tagged clips are rejected (spec 001:
+    synthetic never enters the fresh hold-out).
+
+    ``labels`` optionally restricts extraction to the trained class set
+    (FR-032) — hold-out dirs of not-yet-trained labels are skipped so they
+    cannot pollute the fresh hold-out report.
+
+    Returns ``{"features": (M, 100, 13) float32, "labels": (M,),
+    "paths": (M,), "windows_per_label": {...}, "clips_per_label": {...}}``.
+    """
+    root = Path(dataset_root)
+    base = root / "holdout"
+    if not base.is_dir():
+        raise FeaturesError(
+            f"no fresh hold-out directory: {base} — NFR-003 requires hold-out "
+            "scoring (record clips under dataset/holdout/<label>/)"
+        )
+
+    rows: list[_Row] = []
+    nan_failures: list[str] = []
+    clip_counts: Counter[str] = Counter()
+    unknown: list[str] = []
+    own_mfcc = mfcc is None
+    if own_mfcc:
+        try:
+            mfcc = Mfcc(SAMPLE_RATE)
+        except Exception as exc:  # noqa: BLE001 — surface any build/load failure loudly
+            raise FeaturesError(
+                f"cannot load the shared C MFCC library (dsp/build/libmfcc.so): {exc}"
+            ) from exc
+    try:
+        for label_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+            label = label_dir.name
+            if label not in REGISTRY_IDS:
+                unknown.append(f"holdout/{label}")
+                continue
+            if labels is not None and label not in labels:
+                continue  # not in the trained subset (FR-032) — skip, don't pollute
+            wavs = sorted(label_dir.rglob("*.wav"))
+            if not wavs:
+                continue
+            stray_synthetic = [w for w in wavs if is_synthetic(w)]
+            if stray_synthetic:
+                raise FeaturesError(
+                    "synthetic-tagged clip(s) in the fresh hold-out (spec 001: "
+                    "synthetic never enters the fresh hold-out): "
+                    + ", ".join(
+                        w.relative_to(root).as_posix() for w in sorted(stray_synthetic)
+                    )
+                )
+            clip_counts[label] = len(wavs)
+            clip_rows, nan = _clip_rows(root, label, wavs, mfcc)
+            rows.extend(clip_rows)
+            nan_failures.extend(nan)
+    finally:
+        if own_mfcc and mfcc is not None:
+            mfcc.close()
+
+    if nan_failures:
+        raise _nan_error(nan_failures)
+    if unknown:
+        raise FeaturesError(
+            "unknown label dir(s) under holdout/ (not in "
+            f"model/registry.json): {', '.join(sorted(unknown))}"
+        )
+    if not rows:
+        raise FeaturesError(
+            f"no hold-out wav clips under {base}/<label>/ — NFR-003 requires "
+            "fresh hold-out scoring (record clips under dataset/holdout/<label>/)"
+        )
+
+    windows_per_label = Counter(r.label for r in rows)
+    return {
+        "features": np.stack([r.features for r in rows]).astype(np.float32),
+        "labels": np.array([r.label for r in rows], dtype=np.str_),
+        "paths": np.array([r.path for r in rows], dtype=np.str_),
+        "windows_per_label": dict(sorted(windows_per_label.items())),
+        "clips_per_label": dict(sorted(clip_counts.items())),
     }
