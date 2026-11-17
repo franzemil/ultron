@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(dataset): seeded ffmpeg augmentation (T5) (#14) — @franzemil
+
+## 2026-11-17
 - spec: defer device-in-loop validation to optional pass (001-can-hear) (#18) — @franzemil
 
 ## 2026-11-17
