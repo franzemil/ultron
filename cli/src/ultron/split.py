@@ -1,14 +1,11 @@
-"""``ultron split`` — split a long take into per-utterance WAVs (pyannote VAD).
+"""``ultron split`` — split a long take into per-utterance WAVs (Silero VAD).
 
-Runs pyannote.audio Voice Activity Detection on a take WAV produced by
-``ultron record-long``, slices each speech segment into its own WAV, and writes
-``{label}_local_<nn>.wav`` under ``dataset/originals/<label>/``.
+Runs Silero VAD on a take WAV produced by ``ultron record-long``, slices each
+speech segment into its own WAV, and writes ``{label}_local_<nn>.wav`` under
+``dataset/originals/<label>/``.
 
 One label per take — you pass ``--label``, so every segment gets that label.
-No STT, no diarization, nothing runs on XIAO / Pi.
-
-Requires a Hugging Face token (``PYANNOTE_HF_TOKEN`` env or ``--hf-token``) to
-download ``pyannote/voice-activity-detection``.
+No STT, no HF token, no license acceptance needed.
 
 Beyond T4/T8 scope (T9). Host-side only.
 """
@@ -24,6 +21,7 @@ from typing import Optional
 
 import numpy as np
 import typer
+from typer.models import OptionInfo
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 
@@ -35,7 +33,16 @@ SAMPLE_WIDTH = 2  # 16-bit int16
 
 console = Console()
 
-PYANNOTE_MODEL = "pyannote/voice-activity-detection"
+
+def _opt(value, default):
+    """Return the plain value from a typer OptionInfo or the value itself.
+
+    When Typer-decorated commands are called directly (not via the CLI),
+    parameter defaults are raw OptionInfo objects; unwrap them.
+    """
+    if isinstance(value, OptionInfo):
+        return value.default
+    return value
 
 
 def _registry() -> dict:
@@ -124,67 +131,38 @@ def _next_nn(label_dir: Path, label: str, mic: str = "local") -> int:
     return best + 1
 
 
-def _load_pipeline(hf_token: Optional[str], revision: Optional[str] = None):
-    """Load pyannote VAD pipeline.
-
-    Token resolution order:
-      1. --hf-token CLI option
-      2. PYANNOTE_HF_TOKEN environment variable
-      3. Cached token from ``huggingface-cli login`` (handled by huggingface_hub)
-
-    Supports both old (use_auth_token) and new (hf_token/no-arg) pyannote.audio APIs.
-    Pass ``revision`` if the model requires an explicit model revision.
-    """
-    token = hf_token or os.environ.get("PYANNOTE_HF_TOKEN")
+def _load_vad():
+    """Load the Silero VAD model (small ONNX/torch model, no token needed)."""
     try:
-        from pyannote.audio import Pipeline
-    except ImportError as exc:  # pragma: no cover - heavy dep
-        console.print("[red]pyannote.audio not installed.[/red]")
-        console.print("pip install pyannote.audio")
+        from silero_vad import load_silero_vad, get_speech_timestamps
+    except ImportError:
+        console.print("[red]silero-vad not installed.[/red]")
+        console.print("pip install silero-vad")
         raise typer.Exit(code=2)
-    # Try the new API first (pyannote.audio 2.x+: hf_token), fall back to old (use_auth_token).
-    # Try with and without explicit revision (some models require it).
-    load_kwargs_list = []
-    for kw in [{"hf_token": token} if token else {}, {"use_auth_token": token} if token else {}, {}]:
-        for rev in [{"revision": revision} if revision else {}, {}]:
-            load_kwargs_list.append({**kw, **rev})
-    last_exc = None
-    for kwargs in load_kwargs_list:
-        try:
-            pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, **kwargs)
-            return pipeline
-        except TypeError as exc:
-            if "use_auth_token" in str(exc) or "hf_token" in str(exc):
-                last_exc = exc
-                continue
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            break
-
-    console.print(f"[red]Failed to load pyannote VAD model: {last_exc}[/red]")
-    if token is None:
-        console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
-    console.print("Find the model revision at: https://huggingface.co/pyannote/voice-activity-detection/commits/main")
-    console.print("Then rerun: ultron split <take.wav> --label <label> --revision <commit-hash>")
-    console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
-    raise typer.Exit(code=2)
+    try:
+        model = load_silero_vad()
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Failed to load Silero VAD model: {exc}[/red]")
+        raise typer.Exit(code=2)
+    return model, get_speech_timestamps
 
 
 def split_command(
     take: str = typer.Argument(..., help="Path to take WAV (from ultron record-long)."),
     label: str = typer.Argument(..., help="Label slug (registry id, e.g. lb, wake, noise)."),
-    hf_token: Optional[str] = typer.Option(
-        None, "--hf-token", "-t", help="Hugging Face API token (or set PYANNOTE_HF_TOKEN)."
-    ),
-    revision: Optional[str] = typer.Option(
-        "8d678d7647d9c991934b2270b21fe390f9a8fea5", "--revision", "-r", help="Model revision (commit hash) for pyannote VAD model."
-    ),
     out_dir: str = typer.Option(
         "dataset/originals", "--out-dir", "-o", help="Dataset output directory.",
     ),
+    min_speech_ms: int = typer.Option(
+        250, "--min-speech-ms", help="Minimum speech segment length in milliseconds."
+    ),
+    min_silence_ms: int = typer.Option(
+        300, "--min-silence-ms", help="Minimum silence between segments in milliseconds."
+    ),
 ) -> None:
-    """Split a take into per-utterance WAVs labeled by --label."""
+    """Split a take into per-utterance WAVs labeled by --label (Silero VAD)."""
+    min_speech_ms = _opt(min_speech_ms, 250)
+    min_silence_ms = _opt(min_silence_ms, 300)
     registry = _registry()
     _validate_label(label, registry)
 
@@ -195,15 +173,25 @@ def split_command(
 
     samples = _read_wav(take_path)
 
-    pipeline = _load_pipeline(hf_token, revision)
-    vad = pipeline({"waveform": samples[None, :].astype(np.float32) / 32768.0, "sample_rate": SAMPLE_RATE})
+    model, get_speech_timestamps = _load_vad()
 
-    segments = []
-    for speech in vad.get_timeline().support():
-        # pyannote Segment objects expose .start/.end; tuples also work.
-        start = getattr(speech, "start", speech[0])
-        end = getattr(speech, "end", speech[1])
-        segments.append((float(start), float(end)))
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task("Running Silero VAD...", total=None)
+        speech_ts = get_speech_timestamps(
+            samples,
+            model,
+            sampling_rate=int(SAMPLE_RATE),
+            min_speech_duration_ms=int(min_speech_ms),
+            min_silence_duration_ms=int(min_silence_ms),
+        )
+        progress.update(task, completed=1, total=1)
+
+    segments = [(ts["start"], ts["end"]) for ts in speech_ts]
 
     if not segments:
         console.print(f"[yellow]No speech detected in {take_path.name}[/yellow]")
@@ -222,11 +210,9 @@ def split_command(
         TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         TimeElapsedColumn(),
     ) as progress:
-        task = progress.add_task(f"Splitting {len(segments)} segment(s)...", total=len(segments))
+        task = progress.add_task(f"Writing {len(segments)} segment(s)...", total=len(segments))
         for start, end in segments:
-            i_start = int(start * SAMPLE_RATE)
-            i_end = int(end * SAMPLE_RATE)
-            seg = samples[i_start:i_end]
+            seg = samples[start:end]
             if len(seg) < SAMPLE_RATE // 20:  # skip segments shorter than 50 ms
                 progress.advance(task)
                 continue

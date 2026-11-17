@@ -11,7 +11,7 @@ dependencies = [
     "sounddevice",
     "numpy",
     "questionary",
-    "pyannote.audio",
+    "silero-vad",
 ]
 
 [project.scripts]

@@ -68,19 +68,13 @@ def record_split_command(
     device: Optional[str] = typer.Option(
         None, "--device", "-d", help="Input device index or name substring."
     ),
-    hf_token: Optional[str] = typer.Option(
-        None, "--hf-token", "-t", help="Hugging Face API token (or set PYANNOTE_HF_TOKEN)."
-    ),
-    revision: Optional[str] = typer.Option(
-        "8d678d7647d9c991934b2270b21fe390f9a8fea5", "--revision", "-r", help="Model revision (commit hash) for pyannote VAD model."
-    ),
     out_dir: str = typer.Option(
         "dataset", "--out-dir", "-o", help="Dataset output directory (default dataset/)."
     ),
 ) -> None:
     """Record a continuous take then split it into per-utterance WAVs - one command.
 
-    Records --seconds of audio as a take, runs pyannote.audio VAD on it, and
+    Records --seconds of audio as a take, runs Silero VAD on it, and
     writes each speech segment as {label}_local_<nn>.wav under
     dataset/originals/<label>/. Single label per take; no STT needed.
 
@@ -111,8 +105,6 @@ def record_split_command(
     split_command(
         take=str(take_path),
         label=label,
-        hf_token=hf_token,
-        revision=revision,
         out_dir=out_dir,
     )
 

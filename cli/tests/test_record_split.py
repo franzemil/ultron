@@ -1,9 +1,10 @@
-"""Host-side checks for ``ultron record-split`` (T9).
+"""Host-side checks for ``ultron record-split`` (T9 — Silero VAD).
 
-Combines record-long + split in one command. sounddevice / pyannote stubbed.
+Combines record-long + split in one command. sounddevice / silero-vad stubbed.
 Verifies:
   * record-split module wiring (record_long_command then split_command)
   * unknown label rejected
+  * rich picker selects label when omitted
   * end-to-end: records a take, splits into segments, writes per-label WAVs
 
 Run:  uv run pytest tests/test_record_split.py
@@ -21,14 +22,30 @@ from unittest import mock
 import numpy as np
 import pytest
 import typer
-import questionary
 from ultron.record_long import SAMPLE_RATE
 
 CLI_PY = Path(__file__).resolve().parents[1] / "src" / "ultron" / "cli.py"
 
 
+def make_fake_silero(segments_ms):
+    """Build a fake silero_vad module returning fixed segments."""
+    def fake_get_speech_timestamps(samples, model, sampling_rate=16000, **kwargs):
+        out = []
+        for start_ms, end_ms in segments_ms:
+            out.append({
+                "start": int(start_ms * sampling_rate / 1000),
+                "end": int(end_ms * sampling_rate / 1000),
+            })
+        return out
+
+    return SimpleNamespace(
+        load_silero_vad=lambda: object(),
+        get_speech_timestamps=fake_get_speech_timestamps,
+    )
+
+
 def load_cli_module():
-    """Import ultron.cli with sounddevice/pyannote stubbed."""
+    """Import ultron.cli with sounddevice stubbed."""
     fake_sd = SimpleNamespace(
         query_devices=lambda: [
             {"index": 0, "name": "Built-in Microphone", "max_input_channels": 1},
@@ -62,12 +79,10 @@ def test_record_split_unknown_label(mod):
     assert exc.value.exit_code == 2
 
 
-def test_record_split_picker(mod, tmp_path, monkeypatch):
+def test_record_split_picker(mod, tmp_path):
     """When label is omitted, questionary picker is used to select a code."""
     out_root = tmp_path / "dataset"
-    monkeypatch.setenv("PYANNOTE_HF_TOKEN", "fake-token")
 
-    # Stub questionary.select to return "wake"
     class _FakeSelectResult:
         def ask(self):
             return "wake"
@@ -76,40 +91,18 @@ def test_record_split_picker(mod, tmp_path, monkeypatch):
         return _FakeSelectResult()
 
     fake_recording = np.zeros(SAMPLE_RATE * 3, dtype="<i2")
-
-    class _FakeTimeline:
-        def __init__(self, segments):
-            self._segments = segments
-        def support(self):
-            return self._segments
-
-    class _FakeVadResult:
-        def __init__(self, segments):
-            self._timeline = _FakeTimeline(segments)
-        def get_timeline(self):
-            return self._timeline
-
-    class _FakePipeline:
-        def __init__(self, segments):
-            self._segments = segments
-        def __call__(self, waveform):
-            return _FakeVadResult(self._segments)
-
-    fake_pipeline = _FakePipeline([(0.5, 1.0)])
-    fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
-    )
+    fake_silero = make_fake_silero([(500, 1000)])
 
     def fake_rec(*args, **kwargs):
         return fake_recording
 
-    with mock.patch.dict(sys.modules, {
-        "pyannote.audio": fake_pyannote,
-        "pyannote": SimpleNamespace(audio=fake_pyannote),
-    }),          mock.patch.object(mod.questionary, "select", side_effect=fake_select),          mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "rec", fake_rec),          mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "wait"):
-        mod.record_split_command(seconds=3, label=None, device=None, hf_token="tok", out_dir=str(out_root))
+    rl = __import__("ultron.record_long", fromlist=["sd"])
+    with mock.patch.dict(sys.modules, {"silero_vad": fake_silero}), \
+         mock.patch.object(mod.questionary, "select", side_effect=fake_select), \
+         mock.patch.object(rl.sd, "rec", fake_rec), \
+         mock.patch.object(rl.sd, "wait"):
+        mod.record_split_command(seconds=3, label=None, device=None, out_dir=str(out_root))
 
-    # Should have recorded and split for "wake"
     takes = sorted(out_root.glob("takes/take_*_wake.wav"))
     assert len(takes) == 1, takes
 
@@ -129,56 +122,25 @@ def test_record_split_end_to_end(mod, tmp_path):
     """record-split records a take then splits into segments."""
     out_root = tmp_path / "dataset"
 
-    # Fake take recording: 3 seconds of audio
     fake_recording = np.zeros(SAMPLE_RATE * 3, dtype="<i2")
+    fake_silero = make_fake_silero([(500, 1000), (1500, 2000)])
 
-    # Fake pyannote: 2 segments
-    class _FakeTimeline:
-        def __init__(self, segments):
-            self._segments = segments
-
-        def support(self):
-            return self._segments
-
-    class _FakeVadResult:
-        def __init__(self, segments):
-            self._timeline = _FakeTimeline(segments)
-
-        def get_timeline(self):
-            return self._timeline
-
-    class _FakePipeline:
-        def __init__(self, segments):
-            self._segments = segments
-
-        def __call__(self, waveform):
-            return _FakeVadResult(self._segments)
-
-    fake_pipeline = _FakePipeline([(0.5, 1.0), (1.5, 2.0)])
-    fake_pyannote = SimpleNamespace(
-        Pipeline=SimpleNamespace(from_pretrained=lambda model, **kwargs: fake_pipeline)
-    )
-
-    record_calls = []
     def fake_rec(*args, **kwargs):
-        record_calls.append(args)
         return fake_recording
 
-    with mock.patch.dict(sys.modules, {"pyannote.audio": fake_pyannote, "pyannote": SimpleNamespace(audio=fake_pyannote)}), \
-         mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "rec", fake_rec), \
-         mock.patch.object(__import__("ultron.record_long", fromlist=["sd"]).sd, "wait"):
-        mod.record_split_command(seconds=3, label="lb", device=None, hf_token="tok", out_dir=str(out_root))
+    rl = __import__("ultron.record_long", fromlist=["sd"])
+    with mock.patch.dict(sys.modules, {"silero_vad": fake_silero}), \
+         mock.patch.object(rl.sd, "rec", fake_rec), \
+         mock.patch.object(rl.sd, "wait"):
+        mod.record_split_command(seconds=3, label="lb", device=None, out_dir=str(out_root))
 
-    # A take was recorded
     takes = sorted(out_root.glob("takes/take_*_lb.wav"))
     assert len(takes) == 1, takes
 
-    # Segments were split
     segments = sorted(out_root.glob("originals/lb/lb_local_*.wav"))
     assert len(segments) == 2, segments
     assert [p.name for p in segments] == ["lb_local_01.wav", "lb_local_02.wav"]
 
-    # Each segment is valid 16k/16-bit/mono
     for wav in segments:
         with wave.open(str(wav), "rb") as w:
             assert w.getframerate() == 16000
