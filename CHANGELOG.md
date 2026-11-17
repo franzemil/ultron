@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(dataset): ingest, validate, dcfix + registry (T3) (#12) — @franzemil
+
+## 2026-11-17
 - feat(cli): uv workspace + ultron CLI skeleton (T2) (#11) — @franzemil
 
 ## 2026-11-14
