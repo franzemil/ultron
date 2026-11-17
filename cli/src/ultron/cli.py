@@ -20,6 +20,7 @@ from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, i
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
+from . import synth, tts
 
 console = Console()
 
@@ -41,6 +42,11 @@ augment = typer.Typer(
 )
 app.add_typer(augment, name="augment")
 
+synth_app = typer.Typer(
+    name="synth",
+    help="Synthetic data generation (tts, noise).",
+)
+app.add_typer(synth_app, name="synth")
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
@@ -230,6 +236,86 @@ def version() -> None:
     from ultron import __version__
 
     typer.echo(f"ultron {__version__}")
+
+
+@synth_app.command(name="tts")
+def synth_tts(
+    output: str = typer.Option(
+        "dataset/synthetic", "--output", "-o", help="Output directory for synthetic TTS clips"
+    ),
+    seed: int = typer.Option(42, "--seed", help="RNG seed (same seed => identical synthetic set)"),
+    voices: str = typer.Option(
+        "", "--voices", help="Comma-separated voice names (default: engine-dependent Spanish voices)"
+    ),
+    speeds: str = typer.Option(
+        "0.9,1.0,1.1", "--speeds", help="Comma-separated speaking speeds"
+    ),
+    engine: str = typer.Option(
+        "auto", "--engine", help="TTS engine: say (macOS), mock (deterministic offline), auto"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List the render plan without writing any file"
+    ),
+) -> None:
+    """Render every registered phrase in several Spanish TTS voices x speeds (seeded)."""
+    voice_list = tuple(v.strip() for v in voices.split(",") if v.strip()) if voices else ()
+    speed_list = tuple(s.strip() for s in speeds.split(",") if s.strip())
+    if not voice_list:
+        voice_list = tuple(tts.say_voices()) or tts.DEFAULT_MOCK_VOICES
+    if not speed_list:
+        speed_list = tts.DEFAULT_MOCK_SPEEDS
+
+    rendered = synth.render_tts(
+        voices=voice_list,
+        speeds=speed_list,
+        output=Path(output),
+        seed=seed,
+        engine=engine,
+        dry_run=dry_run,
+    )
+    if dry_run:
+        typer.echo("DRY-RUN complete — nothing written.")
+        return
+    total = sum(rendered.values())
+    typer.echo(
+        f"TTS render complete: {total} clips across {len(voice_list)} voices x {len(speed_list)} speeds"
+    )
+    for label, count in sorted(rendered.items()):
+        typer.echo(f"  {label}: {count}")
+
+
+@synth_app.command(name="noise")
+def synth_noise(
+    output: str = typer.Option(
+        "dataset/synthetic/noise", "--output", "-o", help="Output directory for the noise corpus"
+    ),
+    seed: int = typer.Option(42, "--seed", help="RNG seed (same seed => identical corpus)"),
+    sources: str = typer.Option(
+        "room,car", "--sources", help="Comma-separated noise sources (room, car)"
+    ),
+    count: int = typer.Option(8, "--count", help="Clips per source"),
+    seconds: int = typer.Option(4, "--seconds", help="Seconds per noise clip"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List the assembly plan without writing any file"
+    ),
+) -> None:
+    """Assemble a noise corpus (room ambience, car/engine sounds) for background mixing."""
+    source_list = tuple(s.strip() for s in sources.split(",") if s.strip())
+    counts = synth.render_noise(
+        output=Path(output),
+        sources=source_list,
+        seed=seed,
+        count_per_source=count,
+        seconds=seconds,
+        dry_run=dry_run,
+    )
+    if dry_run:
+        typer.echo("DRY-RUN complete — nothing written.")
+        return
+    total = sum(counts.values())
+    typer.echo(f"Noise corpus complete: {total} clips across {len(source_list)} sources")
+    for source, count in sorted(counts.items()):
+        typer.echo(f"  {source}: {count}")
 
 
 def main() -> None:
