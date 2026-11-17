@@ -130,10 +130,15 @@ def validate(path):
 def dc_fix(path):
     """Remove DC offset (subtract mean) from every WAV under <path>, in place.
 
-    FR-022: microphones can add a constant voltage to every sample, shifting
-    the waveform away from zero. Subtracting that constant (the mean) recenters
-    the signal before feature extraction so MFCC features are not computed on
-    a skewed signal (lampara-aliz lesson: no silent training on corrupt data).
+    WHY: microphones (especially the XIAO PDM mic and cheap USB mics) can add a
+    constant voltage to every recorded sample, shifting the whole waveform up or
+    down away from zero -- that is "DC offset". If left in place, every MFCC
+    coefficient is computed on a skewed signal, so features drift from what the
+    on-device DSP actually produces and training silently degrades
+    (lampara-aliz lesson: NaN / DSP error -5, no silent training on corrupt data).
+
+    WHAT: subtracts that constant (the waveform mean) from each int16 sample,
+    recentering the signal around zero before feature extraction (FR-022).
 
     Non-16-bit or unreadable files are skipped with a stderr warning.
     """
