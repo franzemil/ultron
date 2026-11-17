@@ -22,6 +22,7 @@ from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
 from .features import FeaturesError, build_archive
 from . import synth, tts
+from .train import train_app
 
 console = Console()
 
@@ -48,6 +49,7 @@ synth_app = typer.Typer(
     help="Synthetic data generation (tts, noise).",
 )
 app.add_typer(synth_app, name="synth")
+app.add_typer(train_app, name="train")
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
