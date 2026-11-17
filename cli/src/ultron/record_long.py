@@ -119,8 +119,9 @@ def record_long_command(
     )
     sd.wait()
     _write_wav(out_path, recording)
-    console.print(f"[green]DONE[/green] wrote {out_path} ({recording.shape[0]} samples)")
-    console.print("Next: [bold]ultron split <take.wav> --label <label>[/bold]")
+    duration = recording.shape[0] / SAMPLE_RATE
+    console.print(f"[green]DONE[/green] wrote {out_path.name} ({duration:.1f}s take)")
+    return out_path
 
 
 __all__ = ["record_long_command"]

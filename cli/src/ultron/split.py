@@ -25,6 +25,7 @@ from typing import Optional
 import numpy as np
 import typer
 from rich.console import Console
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 
 from ultron.dataset import REGISTRY_IDS
 
@@ -191,18 +192,27 @@ def split_command(
 
     nn = _next_nn(label_dir, label, "local")
     total = 0
-    for start, end in segments:
-        i_start = int(start * SAMPLE_RATE)
-        i_end = int(end * SAMPLE_RATE)
-        seg = samples[i_start:i_end]
-        if len(seg) < SAMPLE_RATE // 20:  # skip segments shorter than 50 ms
-            continue
-        out_path = label_dir / f"{label}_local_{nn:02d}.wav"
-        _write_wav(out_path, seg)
-        nn += 1
-        total += 1
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task(f"Splitting {len(segments)} segment(s)...", total=len(segments))
+        for start, end in segments:
+            i_start = int(start * SAMPLE_RATE)
+            i_end = int(end * SAMPLE_RATE)
+            seg = samples[i_start:i_end]
+            if len(seg) < SAMPLE_RATE // 20:  # skip segments shorter than 50 ms
+                progress.advance(task)
+                continue
+            out_path = label_dir / f"{label}_local_{nn:02d}.wav"
+            _write_wav(out_path, seg)
+            nn += 1
+            total += 1
+            progress.advance(task)
 
-    console.print(f"[green]DONE[/green] split {take_path.name} into {total} segment(s) for '{label}'")
+    console.print(f"[green]DONE[/green] split {take_path.name} into {total} WAV example(s) for '{label}'")
     console.print(f"Wrote to {label_dir}")
     console.print("Next: [bold]ultron dataset validate[/bold]")
 
