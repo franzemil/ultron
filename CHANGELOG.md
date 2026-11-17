@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-17
+- feat(cli): features command → build/features.npz (T7) (#29) — @franzemil
+
+## 2026-11-17
 - fix(dsp): restore libmfcc host build + parity test (#28) — @franzemil
 
 ## 2026-11-17
