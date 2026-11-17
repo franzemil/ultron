@@ -39,10 +39,19 @@ def load_record_module():
         wait=lambda: None,
         default=SimpleNamespace(device=(0, None)),
     )
+    class _Panel:
+        def __init__(self, body, title="", subtitle="", border_style="cyan"):
+            self.body = body
+            self.title = title
+            self.subtitle = subtitle
+        def __rich__(self):
+            return self
+
     fake_rich = SimpleNamespace(
-        Console=lambda *a, **k: SimpleNamespace(print=lambda *a, **k: None),
+        Console=lambda *a, **k: SimpleNamespace(print=lambda *a, **k: None, clear=lambda *a, **k: None),
         Confirm=SimpleNamespace(ask=lambda *a, **k: False),
         Prompt=SimpleNamespace(ask=lambda *a, **k: ""),
+        panel=SimpleNamespace(Panel=_Panel),
     )
     with mock.patch.dict(
         sys.modules,
@@ -51,6 +60,7 @@ def load_record_module():
             "numpy": np,
             "rich": fake_rich,
             "rich.console": fake_rich,
+            "rich.panel": fake_rich.panel,
             "rich.prompt": SimpleNamespace(
                 Confirm=fake_rich.Confirm, Prompt=fake_rich.Prompt
             ),
@@ -129,17 +139,18 @@ def test_record_command_stops_at_samples(mod, tmp_path):
 
     fake_recording = np.zeros(mod.SAMPLE_RATE * 2, dtype="<i2")
 
-    # Select only 'lm' and 'wake'; stop after 2 samples each.
-    def confirm_ask(prompt, default=False):
-        import re
-
-        m = re.search(r"Record '(\w+)'\?", prompt)
-        return bool(m and m.group(1) in {"lm", "wake"})
+    # Select only 'lm' (index 8) and 'wake' (index 13); stop after 2 samples each.
+    calls = []
+    def prompt_ask(prompt, default=None):
+        calls.append(prompt)
+        if prompt == "> ":
+            return "8,13" if len(calls) == 1 else ""
+        return ""
 
     def fake_rec(*args, **kwargs):
         return fake_recording
 
-    with mock.patch.object(mod.Confirm, "ask", side_effect=confirm_ask), \
+    with mock.patch.object(mod.Prompt, "ask", side_effect=prompt_ask), \
          mock.patch.object(mod.sd, "rec", fake_rec), \
          mock.patch.object(mod.sd, "wait"):
         mod.record_command(seconds=2, samples=2, device=None, out_dir=str(out_root))

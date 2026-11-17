@@ -1,9 +1,9 @@
 """``ultron record`` — interactively record training WAVs from the host mic.
 
-Prompts the owner to select which command codes to record from
-``model/registry.json`` (rich-based prompts), then records ``--seconds`` of
-16 kHz / 16-bit / mono audio per attempt until ``--samples`` examples exist
-per selected code. Writes ``{label}_local_{nn:02d}.wav`` under
+Prompts the owner to select which command codes to record using a
+Rich-based checkbox interface, then records ``--seconds`` of 16 kHz /
+16-bit / mono audio per attempt until ``--samples`` examples exist per
+selected code. Writes ``{label}_local_{nn:02d}.wav`` under
 ``dataset/originals/<label>/`` (mic tag ``local``), ready for
 ``ultron dataset ingest`` / ``validate``.
 
@@ -23,6 +23,7 @@ from typing import Optional
 
 import numpy as np
 from rich.console import Console
+from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 import sounddevice as sd
 import typer
@@ -110,6 +111,68 @@ def _record_once(label: str, seconds: float, device_index: int, out_path: Path) 
     console.print(f"[green]DONE[/green] wrote {out_path} ({recording.shape[0]} samples)")
 
 
+def _existing_count(out_root: Path, label: str) -> int:
+    label_dir = out_root / "originals" / label
+    if not label_dir.is_dir():
+        return 0
+    return len([p for p in label_dir.iterdir() if p.name.startswith(f"{label}_local_") and p.suffix == ".wav"])
+
+
+def _render_checkbox(codes: list[str], selected: set[str], out_root: Path, samples: int) -> str:
+    """Render the checkbox list as a Rich panel."""
+    lines = []
+    for i, code in enumerate(codes, start=1):
+        marked = "[x]" if code in selected else "[ ]"
+        have = _existing_count(out_root, code)
+        need = max(0, samples - have)
+        lines.append(f"  {i:2d}. {marked} {code:<12} (need {need})")
+    body = "\n".join(lines)
+    hint = "[dim]Enter comma-separated numbers to toggle (e.g. 2,3,11), 'a' = all, 'n' = none, Enter = confirm[/dim]"
+    return Panel(body, title="Select codes to record", subtitle=hint, border_style="cyan")
+
+
+def _select_codes(codes: list[str], out_root: Path, samples: int) -> set[str]:
+    """Interactive checkbox selection of registry codes."""
+    selected: set[str] = set()
+    while True:
+        try:
+            console.clear()
+        except Exception:
+            pass
+        console.print(_render_checkbox(codes, selected, out_root, samples))
+        ans = Prompt.ask("> ").strip().lower()
+        if ans == "":
+            break
+        if ans == "a":
+            selected = set(codes)
+            continue
+        if ans == "n":
+            selected = set()
+            continue
+        toggled = False
+        for token in ans.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                idx = int(token) - 1
+            except ValueError:
+                console.print(f"[yellow]skip invalid token: {token}[/yellow]")
+                continue
+            if 0 <= idx < len(codes):
+                code = codes[idx]
+                if code in selected:
+                    selected.discard(code)
+                else:
+                    selected.add(code)
+                toggled = True
+            else:
+                console.print(f"[yellow]out of range: {token}[/yellow]")
+        if not toggled and ans not in ("a", "n"):
+            console.print("[dim]Press Enter to confirm selection.[/dim]")
+    return selected
+
+
 def record_command(
     seconds: float = typer.Option(5.0, "--seconds", "-s", help="Seconds per recording attempt."),
     samples: int = typer.Option(20, "--samples", "-n", help="Target number of examples per code."),
@@ -127,22 +190,16 @@ def record_command(
     codes = sorted(REGISTRY_IDS)
     console.print("Recordable codes: " + ", ".join(codes))
 
-    selected: list[str] = []
-    for code in codes:
-        if Confirm.ask(f"Record '{code}'?", default=False):
-            selected.append(code)
+    selected = _select_codes(codes, out_root, samples)
 
     if not selected:
         console.print("No codes selected. Nothing to record.")
         sys.exit(0)
 
     total = 0
-    for label in selected:
+    for label in sorted(selected):
         label_dir = out_root / "originals" / label
-        existing = (
-            sorted(label_dir.glob(f"{label}_local_*.wav")) if label_dir.is_dir() else []
-        )
-        have = len(existing)
+        have = _existing_count(out_root, label)
         need = max(0, samples - have)
         console.print(f"\n[bold]{label}: have {have}, need {need}[/bold]")
         label_dir.mkdir(parents=True, exist_ok=True)
