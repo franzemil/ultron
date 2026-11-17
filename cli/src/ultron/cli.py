@@ -11,7 +11,7 @@ import typer
 
 from .config import config
 from .logging import logger, setup_logging
-from ultron.dataset import ingest, validate, dcfix
+from ultron.dataset import ingest, validate, dc_fix
 
 app = typer.Typer(
     name="ultron",
@@ -71,6 +71,14 @@ def dataset_dcfix(
 def config_info() -> None:
     """Show whether the Edge Impulse key is configured (value hidden)."""
     typer.echo(f"EI API key configured: {config.configured}")
+
+
+@app.command(name="version")
+def version() -> None:
+    """Show the ultron version."""
+    from ultron import __version__
+
+    typer.echo(f"ultron {__version__}")
 
 
 def main() -> None:
