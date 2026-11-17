@@ -217,7 +217,9 @@ def test_split_no_speech_exits_nonzero(mod, tmp_path, monkeypatch):
             assert exc.value.exit_code == 1
 
 
-def test_split_missing_hf_token_fails_fast(mod, tmp_path, monkeypatch):
+def test_split_missing_hf_token_falls_back_to_cli(mod, tmp_path, monkeypatch):
+    """No explicit token -> falls back to huggingface-cli cached token (use_auth_token=None).
+    Since from_pretrained is stubbed, loading succeeds; then no-speech -> exit code 1."""
     take = tmp_path / "take_01_lb.wav"
     with wave.open(str(take), "wb") as w:
         w.setnchannels(1)
@@ -225,8 +227,38 @@ def test_split_missing_hf_token_fails_fast(mod, tmp_path, monkeypatch):
         w.setframerate(mod.SAMPLE_RATE)
         w.writeframes(np.zeros(mod.SAMPLE_RATE * 2, dtype="<i2").tobytes())
 
-    with monkeypatch.context() as m:
-        m.delenv("PYANNOTE_HF_TOKEN", raising=False)
-        with pytest.raises(typer.Exit) as exc:
-            mod.split_command(str(take), "lb", hf_token=None, out_dir=str(tmp_path / "dataset"))
-        assert exc.value.exit_code == 2
+    class _FakeTimeline:
+        def __init__(self, segments):
+            self._segments = segments
+        def support(self):
+            return self._segments
+
+    class _FakeVadResult:
+        def __init__(self, segments):
+            self._timeline = _FakeTimeline(segments)
+        def get_timeline(self):
+            return self._timeline
+
+    class _FakePipeline:
+        def __init__(self, segments):
+            self._segments = segments
+        def __call__(self, waveform):
+            return _FakeVadResult(self._segments)
+
+    fake_pipeline = _FakePipeline([])
+    fake_pyannote = SimpleNamespace(
+        Pipeline=SimpleNamespace(from_pretrained=lambda model, use_auth_token=None: fake_pipeline)
+    )
+
+    from unittest import mock as _mock
+    with _mock.patch.dict(sys.modules, {"pyannote.audio": fake_pyannote, "pyannote": SimpleNamespace(audio=fake_pyannote)}):
+        import importlib.util as _iu
+        spec = _iu.spec_from_file_location("ultron.split4", SPLIT_PY)
+        m4 = _iu.module_from_spec(spec)
+        spec.loader.exec_module(m4)
+
+        with monkeypatch.context() as m:
+            m.delenv("PYANNOTE_HF_TOKEN", raising=False)
+            with pytest.raises(typer.Exit) as exc:
+                m4.split_command(str(take), "lb", hf_token=None, out_dir=str(tmp_path / "dataset"))
+            assert exc.value.exit_code == 1

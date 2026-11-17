@@ -124,13 +124,14 @@ def _next_nn(label_dir: Path, label: str, mic: str = "local") -> int:
 
 
 def _load_pipeline(hf_token: Optional[str]):
-    """Load pyannote VAD pipeline. Fails fast with a clear message if unavailable."""
+    """Load pyannote VAD pipeline.
+
+    Token resolution order:
+      1. --hf-token CLI option
+      2. PYANNOTE_HF_TOKEN environment variable
+      3. Cached token from ``huggingface-cli login`` (use_auth_token=True)
+    """
     token = hf_token or os.environ.get("PYANNOTE_HF_TOKEN")
-    if not token:
-        console.print("[red]Missing Hugging Face token.[/red]")
-        console.print("Set PYANNOTE_HF_TOKEN or pass --hf-token.")
-        console.print(f"Model: {PYANNOTE_MODEL} (accept license on HF first).")
-        raise typer.Exit(code=2)
     try:
         from pyannote.audio import Pipeline
     except ImportError as exc:  # pragma: no cover - heavy dep
@@ -141,7 +142,9 @@ def _load_pipeline(hf_token: Optional[str]):
         pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, use_auth_token=token)
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Failed to load pyannote VAD model: {exc}[/red]")
-        console.print("Check your HF token and license acceptance at huggingface.co/pyannote/voice-activity-detection")
+        if token is None:
+            console.print("Run: [bold]huggingface-cli login[/bold] (or set PYANNOTE_HF_TOKEN / pass --hf-token).")
+        console.print("Accept the model license at huggingface.co/pyannote/voice-activity-detection")
         raise typer.Exit(code=2)
     return pipeline
 
