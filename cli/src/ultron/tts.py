@@ -18,6 +18,7 @@ from __future__ import annotations
 import abc
 import hashlib
 import math
+import os
 import shutil
 import struct
 import subprocess
@@ -43,9 +44,24 @@ class TTSProvider(abc.ABC):
 
 def require_ffmpeg() -> str:
     path = shutil.which("ffmpeg")
-    if not path:
-        raise TTSError("ffmpeg is required for TTS rendering (ffmpeg not found on PATH)")
-    return path
+    if path:
+        return path
+    # Fall back to the ffmpeg binary vendored by imageio-ffmpeg (installable
+    # via uv on Windows, where ffmpeg is not on PATH by default).
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        path = imageio_ffmpeg.get_ffmpeg_exe()
+        if path and os.path.isfile(path):
+            return path
+    except ImportError:
+        pass
+    raise TTSError(
+        "ffmpeg is required for TTS rendering (ffmpeg not found on PATH). "
+        "Install it (e.g. `winget install ffmpeg`, `choco install ffmpeg`, "
+        "or `conda install -c conda-forge ffmpeg`) or run `uv sync` to pull "
+        "the vendored binary via imageio-ffmpeg."
+    )
 
 
 def say_voices() -> list[str]:

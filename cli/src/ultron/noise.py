@@ -10,6 +10,7 @@ Every clip is 16 kHz / 16-bit / mono WAV. Seeded: same seed => identical corpus.
 
 from __future__ import annotations
 
+import os
 import random
 import shutil
 import subprocess
@@ -34,9 +35,24 @@ class NoiseError(RuntimeError):
 
 def require_ffmpeg() -> str:
     path = shutil.which("ffmpeg")
-    if not path:
-        raise NoiseError("ffmpeg is required for noise assembly (ffmpeg not found on PATH)")
-    return path
+    if path:
+        return path
+    # Fall back to the ffmpeg binary vendored by imageio-ffmpeg (installable
+    # via uv on Windows, where ffmpeg is not on PATH by default).
+    try:
+        import imageio_ffmpeg  # type: ignore
+
+        path = imageio_ffmpeg.get_ffmpeg_exe()
+        if path and os.path.isfile(path):
+            return path
+    except ImportError:
+        pass
+    raise NoiseError(
+        "ffmpeg is required for noise assembly (ffmpeg not found on PATH). "
+        "Install it (e.g. `winget install ffmpeg`, `choco install ffmpeg`, "
+        "or `conda install -c conda-forge ffmpeg`) or run `uv sync` to pull "
+        "the vendored binary via imageio-ffmpeg."
+    )
 
 
 def build_noise_corpus(
