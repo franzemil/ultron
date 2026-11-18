@@ -139,6 +139,23 @@ def write_archive(
 
 
 def run_train(archive: Path, dataset_root: Path, *extra: str):
+    """`ultron train run` with every output redirected under ``tmp_path``.
+
+    The CLI defaults write ``build/checkpoint.pt`` (+ report, hold-out report)
+    into the working tree; a test must never leave artifacts there, so any
+    output flag the caller did not pass explicitly is pinned next to the
+    archive instead.
+    """
+    provided = set(extra)
+    outputs = [
+        ("--out-checkpoint", "checkpoint.pt"),
+        ("--out-report", "train_report.json"),
+        ("--out-holdout-md", "holdout_report.md"),
+    ]
+    defaults: list[str] = []
+    for flag, name in outputs:
+        if flag not in provided:
+            defaults += [flag, str(archive.parent / name)]
     return runner.invoke(
         app,
         [
@@ -146,6 +163,7 @@ def run_train(archive: Path, dataset_root: Path, *extra: str):
             "--archive", str(archive),
             "--holdout", str(dataset_root),
             "--registry", str(REGISTRY),
+            *defaults,
             *extra,
         ],
     )
