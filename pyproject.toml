@@ -15,6 +15,11 @@ export = ["ultron-model[export]"]
 #   uv sync --extra synth
 synth = ["kokoro"]
 
+# Analysis notebooks (feature-space exploration). Opt-in so the default dev sync
+# stays light:
+#   uv sync --extra notebook
+notebook = ["jupyterlab", "ipykernel", "plotly", "scikit-learn", "pandas"]
+
 [workspace]
 members = ["cli", "model"]
 

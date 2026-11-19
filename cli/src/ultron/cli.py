@@ -17,6 +17,7 @@ from .augment import AUGMENTED_DIR, DATASET_ROOT, ORIGINALS_DIR, plan_augmentati
 from .config import config
 from .export import export_app
 from .infer import infer_app
+from .sim import sim_command
 from .logging import logger, setup_logging
 from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
 from ultron.record import record_command
@@ -54,6 +55,7 @@ app.add_typer(synth_app, name="synth")
 app.add_typer(train_app, name="train")
 app.add_typer(export_app, name="export")
 app.add_typer(infer_app, name="infer")
+app.command(name="sim")(sim_command)
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)

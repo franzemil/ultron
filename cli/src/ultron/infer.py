@@ -42,7 +42,7 @@ import time
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence, TextIO
+from typing import Callable, Iterable, Iterator, Optional, Sequence, TextIO
 
 import numpy as np
 import typer
@@ -1053,6 +1053,47 @@ class DecisionReporter:
         return {"wake": wakes, "commands_after_wake": paired, "commands_alone": unpaired}
 
 
+def score_stream(
+    blocks: Iterable[np.ndarray],
+    runner: TfliteRunner,
+    mfcc: Mfcc,
+    thresholds: Thresholds,
+    labels: Sequence[str],
+) -> Iterator[tuple[float, Detection]]:
+    """Yield ``(t_s, detection)`` for every full window of a live block stream.
+
+    2.0 s windows, 500 ms hop, DC-corrected, features from the shared C MFCC
+    binding, decoded with ``thresholds``. Shared by ``infer mic`` (reporting)
+    and ``sim`` (state-machine simulation) so the windowing/decoding path
+    cannot drift between them.
+    """
+    buffer = np.zeros(0, dtype=np.int16)
+    buffer_start = 0  # absolute sample index of buffer[0]
+    total = 0  # absolute samples received
+    window_end = WINDOW_LEN  # absolute sample index of the next window's end
+    for block in blocks:
+        chunk = np.asarray(block, dtype=np.int16).reshape(-1)
+        if chunk.size == 0:
+            continue
+        buffer = np.concatenate([buffer, chunk])
+        total += chunk.size
+        while window_end <= total:
+            lo = window_end - WINDOW_LEN - buffer_start
+            hi = window_end - buffer_start
+            window = buffer[lo:hi]
+            if window.size == WINDOW_LEN:
+                samples = _dc_correct(window.astype(np.int32))
+                features, _starts = window_features(samples, mfcc)
+                scores = runner.scores(features)[0]
+                yield window_end / SAMPLE_RATE, decode_window(scores, labels, thresholds)
+            window_end += HOP_LEN
+        # keep only samples the next window can still need
+        keep_from = max(window_end - WINDOW_LEN, 0)
+        if keep_from > buffer_start:
+            buffer = buffer[keep_from - buffer_start :]
+            buffer_start = keep_from
+
+
 def run_mic_session(
     blocks: Iterable[np.ndarray],
     runner: TfliteRunner,
@@ -1077,39 +1118,14 @@ def run_mic_session(
     Pure reporting — no actuation, no spec 003 event semantics (TD-013).
     """
     reporter = DecisionReporter(thresholds.window_s)
-    buffer = np.zeros(0, dtype=np.int16)
-    buffer_start = 0  # absolute sample index of buffer[0]
-    total = 0  # absolute samples received
-    window_end = WINDOW_LEN  # absolute sample index of the next window's end
     scored = 0
-    for block in blocks:
-        chunk = np.asarray(block, dtype=np.int16).reshape(-1)
-        if chunk.size == 0:
-            continue
-        buffer = np.concatenate([buffer, chunk])
-        total += chunk.size
-        while window_end <= total:
-            lo = window_end - WINDOW_LEN - buffer_start
-            hi = window_end - buffer_start
-            window = buffer[lo:hi]
-            if window.size == WINDOW_LEN:
-                samples = _dc_correct(window.astype(np.int32))
-                features, _starts = window_features(samples, mfcc)
-                scores = runner.scores(features)[0]
-                detection = decode_window(scores, labels, thresholds)
-                scored += 1
-                t_s = window_end / SAMPLE_RATE
-                if stream_windows:
-                    log(format_live_line(t_s, detection))
-                decision = reporter.add(t_s, detection)
-                if decision is not None:
-                    log(decision.line(thresholds.window_s))
-            window_end += HOP_LEN
-        # keep only samples the next window can still need
-        keep_from = max(window_end - WINDOW_LEN, 0)
-        if keep_from > buffer_start:
-            buffer = buffer[keep_from - buffer_start :]
-            buffer_start = keep_from
+    for t_s, detection in score_stream(blocks, runner, mfcc, thresholds, labels):
+        scored += 1
+        if stream_windows:
+            log(format_live_line(t_s, detection))
+        decision = reporter.add(t_s, detection)
+        if decision is not None:
+            log(decision.line(thresholds.window_s))
     log(f"scored {scored} window(s); decisions: {reporter.counts()}")
     return reporter
 
