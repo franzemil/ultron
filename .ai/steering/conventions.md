@@ -89,6 +89,6 @@ Python packaging is a **uv workspace**: the root `pyproject.toml` declares membe
 
 - Functional requirements use **EARS** syntax (`WHEN/WHILE/IF/WHERE … THE SYSTEM SHALL …`) with
   MoSCoW priority on every requirement.
-- Output behaviors enum (spec 001): `steady`, `blink_45s`, `blink_until_cancel`, `cancel`,
-  `motor`, `pulse_2s`, `pulse_05s`.
+- Output behaviors enum (spec 003): `steady`, `blink_45s`, `blink_until_cancel`, `cancel`,
+  `motor_45s`, `pulse_2s`, `pulse_05s`.
 - Stable IDs everywhere: US-001, FR-001, NFR-001, D-001, TD-001, Q-001, T1.

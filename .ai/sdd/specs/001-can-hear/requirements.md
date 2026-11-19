@@ -8,8 +8,8 @@
 ## Overview
 
 Milestone 1 builds ultron's **ears**: the local data pipeline. A uv-based CLI (`ultron`), dataset tooling
-(ingest / validate / dcfix) with the owner-resolved command registry, WAV recorders for both
-candidate devices, seeded augmentation (+ optional synthetic data), and the shared C MFCC library
+(ingest / validate / dcfix) with the owner-resolved command registry, seeded augmentation
+(+ optional synthetic data), and the shared C MFCC library
 proven frame-for-frame against the lampara-aliz Edge Impulse reference extraction.
 
 The system being built overall: a Spanish voice-actuation car manager — wake on **"hey ultron"**,
@@ -19,15 +19,16 @@ devices; a benchmark (spec 004) decides which one ships.
 
 ## Goals
 
-1. One command records valid training audio from either device mic.
+1. One command ingests valid training audio from any source — external recordings now
+   (`mic=ext`), device mics later (US-002, spec 003).
 2. Dataset + registry are validated, reproducible, and never silently corrupt (lampara lessons).
 3. MFCC features are identical everywhere — one C implementation, parity-proven vs EI reference.
 
 ## Non-Goals
 
 - No model training or export here (spec 002).
-- No device runtime/firmware behavior (spec 003) — recorder sketches are utilities, not the
-  shipping firmware.
+- No device runtime/firmware behavior (spec 003) — the WAV recorders moved there too
+  (amendment 2026-11-19, owner decision).
 - No Edge Impulse upload here (spec 005).
 
 ## Shared system context (applies to every milestone spec)
@@ -52,15 +53,20 @@ devices; a benchmark (spec 004) decides which one ships.
 
 ## User Stories
 
-### US-002 — Collect training data on either device
+> **Amendment (2026-11-19, owner-approved):** US-002 (device WAV recorders) moved to
+> [spec 003](../003-can-act/) as T16 — device recording is not required until the hardware
+> milestone. Milestone 1 runs on owner-supplied external recordings (`mic=ext`).
+
+### US-008 — Validated dataset from existing recordings
 **As a** device owner
-**I want to** record WAV clips of each phrase (and noise) from either candidate device
-**so that** the model trains on the real microphones it will run on.
+**I want to** drop my existing recordings (phone/PC) into the dataset
+**so that** training can start before the devices exist.
 
 **Acceptance criteria:**
-- **AC1:** The XIAO recorder writes 16 kHz/16-bit/mono WAVs labeled by phrase to storage.
-- **AC2:** The Pi recorder captures the same format from its microphone.
-- **AC3:** Every recording is DC-offset-correctable and validates (`ultron dataset validate`).
+- **AC1:** `ultron dataset ingest` copies and labels external WAVs with the mic tag `ext`
+  (FR-020).
+- **AC2:** `ultron dataset validate` passes every clip or exits non-zero listing failures
+  (FR-021).
 
 ## Functional Requirements (EARS, MoSCoW)
 
@@ -109,13 +115,14 @@ loudly (no silent training on corrupt data — lampara lesson).
 
 ## Success Metrics
 
-- **Milestone 1 — "can hear"**: both recorders + DSP parity green (NFR-007 DSP clause).
+- **Milestone 1 — "can hear"**: external dataset validated (US-008) + DSP parity green
+  (NFR-007 DSP clause); recorders deferred to spec 003 (T16).
 
 ## Risks
 
-- **Mic domain mismatch** (PDM vs USB mic sound different → model biased to XIAO audio):
-  mitigate by recording from both mics and augmenting; the bench (spec 004) measures per-device
-  accuracy.
+- **Mic domain mismatch** (external/USB/PDM mics sound different → model biased to the
+  recording mic): v1 trains on external audio; T16 (spec 003) adds device-mic recordings for a
+  later retrain; the bench (spec 004) measures per-device accuracy.
 
 ## Confirm before building
 

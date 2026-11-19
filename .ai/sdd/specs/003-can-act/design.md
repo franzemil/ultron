@@ -4,9 +4,13 @@
 
 Both targets run the same component graph — capture → shared C MFCC (spec 001) → TFLite
 interpreter (artifacts from spec 002) → a three-state machine (`WAKE_LISTEN`, `CONFIRMING`,
-`LISTENING`) → event sink + feedback player + output controller with 9 relay channels — with only
-the box implementations differing: Arduino/ESP32 C++ firmware on the XIAO, Python (`tflite_runtime`
-+ `sounddevice` + libgpiod) on the Pi. Identical semantics are an AGENTS rule 5 invariant.
+`LISTENING`) → event sink + feedback player (wake "Escuchando" + command "comando" clips) →
+output controller with 9 relay channels. The box implementations differ by design: the XIAO runs
+Arduino/ESP32 C++ firmware and delegates the output controller to a **companion ESP32-S3
+SuperMini** over UART (FR-024) — its pins are reserved for mic + speaker; the Pi runs Python
+(`tflite_runtime` + `sounddevice` + libgpiod) with the controller in-process. Bring-up is
+staged: console-only (T10b) → audio + 2 direct relays (T17) → full companion stack (T10c).
+Identical semantics are an AGENTS rule 5 invariant.
 
 ## Requirements mapping
 
@@ -17,7 +21,8 @@ the box implementations differing: Arduino/ESP32 C++ firmware on the XIAO, Pytho
 | FR-007 | [Architecture](#architecture) (on-device only) |
 | FR-008 | [Event contract](#event-contract) |
 | FR-009, FR-017, NFR-009 | [Output controller](#output-controller) |
-| FR-018, FR-019, NFR-010 | [Audio feedback](#audio-feedback), [State machine](#state-machine) |
+| FR-018, FR-019, FR-023, NFR-010 | [Audio feedback](#audio-feedback), [State machine](#state-machine) |
+| FR-024 | [Output controller](#output-controller) (companion ESP32-S3 SuperMini), [Wiring](#wiring-xiao-stack) |
 | NFR-001, NFR-002 | TD-004/TD-006, [Memory budget](#memory-budget) |
 | NFR-008 | [Observability](#observability) |
 
@@ -29,11 +34,14 @@ flowchart TB
     CAP --> DSP["MFCC — shared C dsp/mfcc (spec 001)<br/>features 100 x 13"]
     DSP --> TFL["TFLite interpreter<br/>same .tflite on both targets (spec 002)<br/>scores: noise, wake, 11 commands"]
     TFL --> SM["state machine<br/>WAKE_LISTEN, CONFIRMING, LISTENING"]
-    SM --> EVT["event sink<br/>serial lines (XIAO) - JSON lines (Pi)"]
-    SM --> FB["feedback player<br/>fixed 'Escuchando' clip"]
+    SM --> EVT["event sink<br/>XIAO: serial lines (USB to host + UART to companion)<br/>Pi: JSON lines"]
+    SM --> FB["feedback player<br/>Escuchando (wake) + comando (command)<br/>fixed clips from flash"]
     FB --> SPK["speaker<br/>XIAO: I2S MAX98357A / Pi: USB dongle"]
-    EVT --> OC["output controller<br/>9 relay channels: LM LB LA GD GI LPB LPA A CC"]
-    OC --> CAR["relay channels to car"]
+    EVT --> UART["XIAO: UART TX 115200-8N1<br/>same EVT lines (FR-024)"]
+    UART --> COMP["companion ESP32-S3 SuperMini<br/>output controller firmware"]
+    COMP --> REL["9 relay channels: LM LB LA GD GI LPB LPA A CC"]
+    EVT --> PIOC["Pi: output controller in-process<br/>libgpiod"]
+    PIOC --> REL
 ```
 
 ### State machine
@@ -57,37 +65,45 @@ stateDiagram-v2
 | WAKE_LISTEN | wake ≥ wake_threshold + margin | emit `WAKE`, play "Escuchando" (FR-018) | CONFIRMING |
 | WAKE_LISTEN | any other score / below threshold | stay silent | WAKE_LISTEN |
 | CONFIRMING | playback ends (≤ 500 ms, NFR-010) | start 5 s timer; discard windows overlapping playback | LISTENING |
-| LISTENING | command ≥ cmd_threshold[class] + margin[class], argmax ≠ wake | emit `CMD id conf`, stop timer | WAKE_LISTEN |
+| LISTENING | command ≥ cmd_threshold[class] + margin[class], argmax ≠ wake | emit `CMD id conf`, stop timer, play "comando" clip (FR-023) | WAKE_LISTEN |
 | LISTENING | wake wins its window | refresh timer (max once, Q-005) | LISTENING |
 | LISTENING | 5 s elapsed | emit `TIMEOUT` | WAKE_LISTEN |
 
-Debounce: while LISTENING, a `WAKE` argmax never acts as a command (FR-005). While CONFIRMING, no
-window decides — frames overlapping playback are excluded (FR-019); inference and `DBG pred=`
-logging continue. The model itself is stateless; all state is the machine above (identical
-semantics on both targets — AGENTS rule 5).
+Debounce: while LISTENING, a `WAKE` argmax never acts as a command (FR-005). While CONFIRMING —
+and during "comando" playback after a command — no window decides: frames overlapping any
+playback are excluded (FR-019, FR-023); inference and `DBG pred=` logging continue. The model
+itself is stateless; all state is the machine above (identical semantics on both targets —
+AGENTS rule 5).
 
 ## Audio feedback
 
 Wake acceptance is confirmed by playing the fixed clip `assets/escuchando.wav` (FR-018, FR-019,
 D-006, Q-012): rendered once with a Spanish TTS voice, 16 kHz/16-bit/mono, ≤ 500 ms
-(silence-trimmed), committed to the repo — byte-identical on both targets. No runtime synthesis
-exists on any target.
+(silence-trimmed), committed to the repo — byte-identical on both targets. Executed commands are
+confirmed by the fixed clip `assets/comando.wav` (FR-023): rendered once (Spanish TTS word or
+short tone), 16 kHz/16-bit/mono, ≤ 300 ms, committed to the repo. No runtime synthesis exists on
+any target.
 
-- **Trigger**: the `WAKE_LISTEN → CONFIRMING` transition — the same edge that emits `WAKE`.
-- **Timing**: playback starts ≤ 200 ms after acceptance, ends ≤ 500 ms after it starts; the 5 s
-  command timer starts at playback end (NFR-010) — the whole chain stays inside FR-001's budget.
-- **Self-hearing guard**: classification windows whose frames overlap playback are discarded
-  (FR-019); inference and `DBG pred=` logging continue throughout.
-- **Observability**: playback logs `DBG play=escuchando state=start|end t_ms=…` (NFR-008 style).
+- **Trigger (wake)**: the `WAKE_LISTEN → CONFIRMING` transition — the same edge that emits `WAKE`.
+- **Trigger (command)**: the `LISTENING → WAKE_LISTEN` transition — the same edge that emits
+  `CMD`. The window has already closed; no listening time is lost.
+- **Timing**: playback starts ≤ 200 ms after acceptance; "Escuchando" ends ≤ 500 ms and
+  "comando" ≤ 300 ms after their starts; on wake, the 5 s command timer starts at playback end
+  (NFR-010) — the whole chain stays inside FR-001's budget.
+- **Self-hearing guard**: classification windows whose frames overlap any playback are discarded
+  (FR-019, FR-023); inference and `DBG pred=` logging continue throughout.
+- **Observability**: playback logs `DBG play=escuchando|comando state=start|end t_ms=…` (NFR-008
+  style).
 - **Fail-fast**: an absent/unusable output device aborts at boot with
   `EVT ERROR code=SPK_INIT_FAILED` on both targets (Q-003 precedent from spec 001).
 
 | Target | Output path | Playback |
 |---|---|---|
-| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on free header pins (SD-card pins stay free for relays, TD-009) | WAV streamed from flash via I2S |
-| Pi | USB audio dongle → powered speaker (default ALSA device) | same clip via `sounddevice` output stream |
+| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on free header pins (SD pins unused at runtime — relays live on the companion, FR-024) | both clips streamed from flash via I2S |
+| Pi | USB audio dongle → powered speaker (default ALSA device) | same clips via `sounddevice` output stream |
 
-Flash cost on XIAO: ~16 KB (500 ms of 16 kHz int16 mono) — fits NFR-002 alongside the model.
+Flash cost on XIAO: ~16 KB ("Escuchando", 500 ms) + ~10 KB ("comando", 300 ms) of 16 kHz int16
+mono — fits NFR-002 alongside the model.
 
 ## Event contract
 
@@ -107,8 +123,15 @@ lines.
 ## Output controller
 
 Consumes `CMD` events and drives **9 relay channels** (`lm lb la gd gi lpb lpa a cc`) per the
-Actuation Behavior Contract (requirements). Same behavior-engine semantics on both targets
-(AGENTS rule 5); only the GPIO layer differs.
+Actuation Behavior Contract (requirements). Same behavior-engine semantics everywhere
+(AGENTS rule 5) — only the location and GPIO layer differ:
+
+- **XIAO stack**: the controller runs as firmware on the **companion ESP32-S3 SuperMini**
+  (FR-024). It receives the same `EVT` lines on UART (115200-8N1, one-way from the XIAO, which
+  forwards every `CMD` event to both USB and UART) and drives the relays; its own USB serial
+  carries `DBG out=` lines. When the link is idle, the XIAO logs `DBG uart=idle` and keeps
+  running voice + feedback.
+- **Pi**: the controller runs in-process via libgpiod.
 
 | Behavior (registry enum) | Engine |
 |---|---|
@@ -116,7 +139,7 @@ Actuation Behavior Contract (requirements). Same behavior-engine semantics on bo
 | `blink_45s` | 1.0 s ON / 1.0 s OFF cycle for exactly 45 s, then OFF |
 | `blink_until_cancel` | GD+GI blink in phase until a CP event |
 | `cancel` (CP) | stop parqueo blinking, GD/GI OFF; no-op if parqueo inactive (FR-017) |
-| `motor` | latch motor channel ON; LPB/LPA mutually exclusive (Q-011 default) |
+| `motor_45s` | drive motor channel ON for a fixed 45 s window, then OFF; LPB/LPA mutually exclusive (switching speed cancels the running window, re-selection restarts it — Q-011 resolved) |
 | `pulse_2s` / `pulse_05s` | hold channel exactly 2 s / 0.5 s (±50 ms), then OFF |
 
 Priority rules: GD or GI while parqueo is active → parqueo cancels and the single-side 45 s
@@ -124,21 +147,60 @@ blink starts; parqueo while a single blink is active → overrides into hazard. 
 at boot and after reset (NFR-009). Timing via a 50 ms non-blocking tick — classification never
 pauses for outputs.
 
-### Relay hardware (9 channels)
+### Relay hardware (9 channels) + wiring
 
-- **XIAO**: header GPIOs driving a relay board (5 V modules, VCC on 5 V; open-drain driving as
-  proven on lampara-aliz D7). The final firmware needs no SD card, so `wav_recorder`'s SD pins
-  are free — header allocation fits 9 channels; if it comes up short, add an **I2C PCF8574
-  expander** (TD-009 fallback).
+- **Companion ESP32-S3 SuperMini (XIAO stack)**: relays on non-strapping pins GPIO1…GPIO10
+  (S3 strapping pins 0/3/45/46 avoided); active-LOW relay board with pull-ups to 3V3 so all
+  channels are OFF at boot (NFR-009); coils on **external 5 V** (JD-VCC jumper removed for opto
+  isolation) — never from USB. Full pin map + power rules: [Wiring](#wiring-xiao-stack) below.
 - **Orange Pi**: `libgpiod` on the 26-pin header + 3.3 V relay board (Q-010 resolved — Pi
   actuation is in scope because the bench decides the winner).
+
+### Wiring (XIAO stack)
+
+```text
+══════ XIAO ESP32S3 SENSE — VOICE (PDM mic is on the Sense board, no wiring) ════
+ USB-C ◄── power + console (EVT / DBG pred= / DBG play=)
+ 5V (VBUS) ──► MAX98357A VIN
+ D2 (GPIO3)  I2S BCLK ──► MAX98357A BCLK
+ D3 (GPIO4)  I2S LRC  ──► MAX98357A LRC
+ D4 (GPIO5)  I2S DIN  ──► MAX98357A DIN
+ D6 (GPIO43) UART0 TX ──► SuperMini GPIO44 (RX)
+ D7 (GPIO44) UART0 RX ◄─ SuperMini GPIO43 (TX, optional DBG)
+ MAX98357A OUT+/OUT− ──► speaker (4–8 Ω, 3 W); GAIN + SD unconnected (9 dB, enabled)
+
+══════ ESP32-S3 SUPERMINI — COMPANION (actuation) ════
+ USB-C ── power + console (DBG out= lines)
+ GPIO44 (RX) ◄── XIAO D6 TX;  GPIO43 (TX) ──► XIAO D7 RX (optional)
+ 3V3 ──► relay board VCC (opto LED side)
+ GPIO1 ►IN1 (LM)  GPIO2 ►IN2 (LB)  GPIO4 ►IN3 (LA)   GPIO5 ►IN4 (GD)
+ GPIO6 ►IN5 (GI)  GPIO7 ►IN6 (LPB) GPIO8 ►IN7 (LPA)  GPIO9 ►IN8 (A)
+ GPIO10 ►IN9 (CC)
+
+══════ RELAY BOARD (9-channel, opto-isolated, ACTIVE-LOW) + POWER RULES ════
+ External 5 V ──► JD-VCC (jumper REMOVED — coil isolation)
+ SuperMini 3V3 ──► relay VCC
+ External 5 V GND, relay GND, XIAO GND, SuperMini GND, MAX98357A GND ──► COMMON GND BUS
+ Pull-ups to 3V3 on IN1…IN9 (active-LOW inputs: floating/pulled-high = relays OFF at boot)
+ Relay COM/NO terminals ──► car circuits (bench loads during M3)
+```
+
+| Rule | Why |
+|---|---|
+| Relay coils on external 5 V | 9 coils ≈ 0.8 A worst case — would brown-out USB power |
+| Common GND bus (XIAO, SuperMini, MAX98357A, relay, supply) | UART + opto inputs need a shared reference |
+| JD-VCC jumper removed | Coil switching noise stays out of the logic side |
+| Active-LOW board + pull-ups to 3V3 | Floating inputs would turn relays ON at boot (NFR-009) |
+| Relays on GPIO1…GPIO10 | S3 strapping pins (0/3/45/46) avoided |
+| No SD card anywhere | Clips in flash, mic audio in RAM |
 
 ## Memory budget (XIAO)
 
 | Item | Budget | Estimated actual | Confirmed by |
 |---|---|---|---|
 | int8 model (flash) | ≤ 100 KB | ~6 KB (≈3K params: 13-class head adds only ~160 B vs 3-class) | spec 002 T9 (export size report) |
-| "Escuchando" clip (flash) | — | ~16 KB (500 ms, 16 kHz int16 mono) | T15 playback verified |
+| "Escuchando" clip (flash) | — | ~16 KB (500 ms, 16 kHz int16 mono) | T17 (XIAO) / T15 (Pi) playback verified |
+| "comando" clip (flash) | — | ~10 KB (300 ms, 16 kHz int16 mono) | T17 (XIAO) / T15 (Pi) playback verified |
 | TFLM arena | ≤ 150 KB | ~16–32 KB | T10b (arena stats) |
 | Audio ring buffer (2 s int16 @16 kHz) | 64 KB | 64 KB | — |
 | MFCC work area | ≤ 8 KB | ~8 KB | spec 001 T6 |
@@ -166,10 +228,22 @@ ESP-IDF (rejected: toolchain churn with zero model benefit).
 **TD-008 — Events over USB serial (XIAO) / stdout JSON lines (Pi)**; actuation local. Alternatives:
 MQTT/WiFi control plane (rejected: v1 non-goal, keep the device isolated).
 
-**TD-009 — 9 relay channels on header GPIOs; I2C PCF8574 expander as fallback.** Reason: the
-final firmware needs no SD card, freeing `wav_recorder`'s pins; the expander is the documented
-escape hatch if allocation comes up short. Alternatives: dedicated automotive shield (none
-exists for XIAO), direct high-side drivers (deferred — the bench rig uses relays).
+**TD-009 — 9 relay channels on header GPIOs; I2C PCF8574 expander as fallback.** *(Superseded by
+TD-012 — after adding the MAX98357A speaker, the XIAO header no longer has room for 9 relays.)*
+Original reason: the final firmware needs no SD card, freeing `wav_recorder`'s pins.
+Alternatives: dedicated automotive shield (none exists for XIAO), direct high-side drivers
+(deferred — the bench rig uses relays).
+
+**TD-012 — Dual-MCU XIAO stack: the companion ESP32-S3 SuperMini drives the relays over UART**
+(FR-024, Q-013). Reason: the XIAO header (~11 GPIOs) is consumed by PDM mic (2) + MAX98357A I2S
+(3) + UART to the companion (2); 9 relay channels do not fit alongside. The companion receives
+the same `EVT` contract lines — reusing the event contract means zero new protocol design — and
+runs the behavior engines locally, keeping boot safety local to the relays. Pin budget: XIAO =
+mic 2 + I2S 3 + UART 2 = 7 of ~11; companion = 9 relays + UART RX on non-strapping pins
+GPIO1…GPIO10 (+ GPIO20/21 spare). Alternatives: I2C PCF8574 expander (TD-009 — viable but adds a
+protocol + driver for no gain over a second generic MCU); in-process GPIO on the XIAO
+(impossible — no pins); moving voice to the companion (rejected — mic + I2S are wired to the
+XIAO).
 
 **TD-011 — Pre-rendered TTS clip for wake confirmation** (D-006, FR-018). Alternatives: runtime
 TTS on the Pi (rejected: the XIAO cannot synthesize speech → divergent behavior = bug, AGENTS
@@ -183,7 +257,8 @@ asked for spoken "Escuchando").
 |---|---|---|
 | On-device | Interaction script | US-001 AC1–AC3 executed on both devices via event log |
 | On-device | Output timing | relay probes: blink/pulse durations within FR-009 tolerances |
-| On-device | Audio feedback | WAKE → clip timing on both devices: start ≤ 200 ms, duration ≤ 500 ms (NFR-010) |
+| On-device | Audio feedback | WAKE → Escuchando timing (start ≤ 200 ms, ≤ 500 ms, NFR-010) + CMD → comando timing (start ≤ 200 ms, ≤ 300 ms, FR-023) on both devices |
+| On-device | UART link | companion receives `EVT` lines from XIAO and actuates; `DBG uart=idle` when the link is absent (FR-024) |
 | On-device | Boot safety | all channels OFF at boot/reset (NFR-009); `SPK_INIT_FAILED` on missing output |
 | On-device | Inference latency | ≤ 400 ms XIAO / ≤ 200 ms Pi logged (NFR-001) |
 

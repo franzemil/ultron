@@ -5,10 +5,10 @@
 | Requirement | Tasks |
 |---|---|
 | FR-016, FR-020, FR-021, FR-022 | T3 |
-| NFR-005 | T4, T5, T5.1 |
+| NFR-005 | T5, T5.1 |
 | NFR-006 | T2 |
 | NFR-007 (DSP clause) | T6 |
-| US-002 | T4 |
+| US-008 | T3 |
 
 This spec **is** Milestone 1 (can hear) — see [.ai/sdd/PLAN.md](../../PLAN.md). Siblings: spec 002
 (Milestone 2 — Can think), spec 003 (Milestone 3 — Can act), spec 004 (Milestone 4 — Can decide),
@@ -54,16 +54,6 @@ criteria before the next begins.
 - Likely files: `cli/src/ultron/dataset.py`, `model/registry.json`, `tests/test_dataset.py`.
 - Verify: `uv run ultron dataset validate` fails loudly on a corrupt fixture and passes a valid
   one.
-
-### T4 — Recorders for both devices (4 h)
-- Covers: US-002, NFR-005. Deps: T2. Priority: Must.
-- Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
-  Pi recorder script (`devices/orangepi/record.py`, sounddevice, 16 k/16-bit/mono, label arg);
-  docs.
-- Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
-  `docs/recording.md`.
-- Verify: XIAO records a 5 s WAV to SD (DONE response); Pi recorder writes a valid WAV
-  (`ultron dataset validate` passes it).
 
 ### T5 — Seeded augmentation (2 h)
 - Covers: NFR-005. Deps: T3. Priority: Must.

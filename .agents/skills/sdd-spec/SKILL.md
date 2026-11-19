@@ -115,8 +115,14 @@ Rules:
 - Each task: `Covers: …`, `Deps: …`, `Priority: Must|Should`, `Checklist`,
   `Likely files`, `Verify:` — the Verify line must be a runnable command or an
   on-device script, and must echo an AC or FR clause.
+- Express each task **SMART**: **S**pecific — scope plus explicit exclusions;
+  **M**easurable — the runnable Verify with quantified tolerances; **A**chievable
+  — deps, inputs, and why it is feasible now; **R**elevant — the FR/NFR/US
+  mapping and what it feeds next; **T**ime-bound — estimate with a session-level
+  time breakdown.
 - Readiness check block lists the gates plus any spec-specific open question
-  (e.g. Q-011 gates only spec 003).
+  that still gates approval. The skill never records resolved-decision history —
+  decisions live in the spec that owns them.
 
 ## Canonical examples
 
