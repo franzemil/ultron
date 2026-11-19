@@ -372,3 +372,92 @@ def test_exec_zero_resumes_on_the_next_window():
 def test_negative_exec_is_rejected():
     with pytest.raises(ValueError):
         sim(exec_s=-1.0)
+
+
+# ── aggregation: how the 5 s window turns detections into a decision ────────
+
+
+def test_aggregate_first_commits_immediately():
+    """Default `first`: the first eligible detection wins (old behaviour)."""
+    s = sim(aggregate="first")
+    s.feed(2.0, det("wake"))
+    event = s.feed(3.0, det("lb", 0.90))
+    assert event.kind == "command" and event.label == "lb"
+    assert s.state == STATE_EXECUTING
+
+
+def test_aggregate_max_waits_and_picks_the_strongest():
+    """`max`: keep collecting; the best score at window end wins."""
+    s = sim(aggregate="max")
+    s.feed(2.0, det("wake"))
+    assert s.feed(3.0, det("lb", 0.90)) is None  # deferred, not committed
+    assert s.feed(4.0, det("la", 0.99)) is None
+    assert s.state == STATE_COMMAND
+    event = s.feed(7.0, det("noise"))  # window expires at 5.0 s after wake
+    assert event.kind == "command" and event.label == "la"
+    assert event.score == pytest.approx(0.99)
+    assert "best of 2 detection(s) at window end" in event.line(5.0, 5.0)
+    assert s.commands == ["la"]
+
+
+def test_aggregate_max_without_detections_times_out():
+    s = sim(aggregate="max")
+    s.feed(2.0, det("wake"))
+    assert s.feed(4.0, det("noise")) is None
+    event = s.feed(7.0, det("noise"))
+    assert event.kind == "timeout"
+    assert s.commands == []
+
+
+def test_aggregate_vote_fires_when_n_agree():
+    s = sim(aggregate="vote", vote_n=2)
+    s.feed(2.0, det("wake"))
+    assert s.feed(3.0, det("la", 0.90)) is None  # one vote: keep listening
+    event = s.feed(3.5, det("la", 0.95))  # second vote -> fire
+    assert event.kind == "command" and event.label == "la"
+    assert event.score == pytest.approx(0.95)  # best of the agreeing hits
+    assert "2 vote(s)" in event.line(5.0, 5.0)
+
+
+def test_aggregate_vote_ignores_a_single_outlier():
+    """Two agreeing hits beat one louder outlier (the prefix-only failure)."""
+    s = sim(aggregate="vote", vote_n=2)
+    s.feed(2.0, det("wake"))
+    s.feed(2.5, det("lb", 0.99))  # outlier (e.g. window caught only the prefix)
+    assert s.feed(3.0, det("la", 0.90)) is None
+    event = s.feed(3.5, det("la", 0.92))
+    assert event.kind == "command" and event.label == "la"
+    assert s.commands == ["la"]
+
+
+def test_aggregate_vote_without_quorum_times_out():
+    s = sim(aggregate="vote", vote_n=2)
+    s.feed(2.0, det("wake"))
+    assert s.feed(3.0, det("la", 0.95)) is None
+    assert s.feed(4.0, det("lb", 0.96)) is None  # split evidence
+    event = s.feed(7.0, det("noise"))
+    assert event.kind == "timeout"
+    assert s.commands == []
+
+
+def test_aggregation_state_is_cleared_between_windows():
+    s = sim(aggregate="max")
+    s.feed(2.0, det("wake"))
+    s.feed(3.0, det("la", 0.9))
+    s.feed(7.0, det("noise"))          # fires la at expiry
+    s.feed(12.0, det("noise"))         # execution ends
+    s.feed(13.0, det("wake"))          # new window: no stale evidence
+    event = s.feed(19.0, det("noise"))  # expires with nothing collected
+    assert event.kind == "timeout"
+    assert s.commands == ["la"]
+
+
+@pytest.mark.parametrize("bad", ["median", "", "MAX"])
+def test_invalid_aggregation_is_rejected(bad):
+    with pytest.raises(ValueError):
+        sim(aggregate=bad)
+
+
+def test_vote_n_below_one_is_rejected():
+    with pytest.raises(ValueError):
+        sim(aggregate="vote", vote_n=0)

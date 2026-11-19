@@ -56,6 +56,7 @@ SEED = 42
 MAX_EPOCHS = 300
 BATCH_SIZE = 16
 LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 1e-4  # A-002: regularise the memorising net (in-sample 100% vs hold-out 84.6%)
 PATIENCE = 30
 VAL_FRACTION = 0.1
 
@@ -397,7 +398,7 @@ def train_model(
 
     model = KwsNet(num_classes=int(train_y.max()) + 1)
     criterion = nn.NLLLoss(weight=_class_weights(train_y, model.num_classes))
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY)
 
     x_train = torch.from_numpy(train_x)
     y_train = torch.from_numpy(train_y.astype(np.int64))

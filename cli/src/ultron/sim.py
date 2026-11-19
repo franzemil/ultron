@@ -61,6 +61,15 @@ STATE_EXECUTING = "EXECUTING"
 DEFAULT_ELIGIBLE = ("la", "lb")
 DEFAULT_EXEC_S = 5.0  # how long a fired command "executes" before listening resumes
 
+# How the COMMAND window turns per-window detections into a decision.
+#   first - commit to the first eligible window that fires (fastest, most fragile:
+#           a window that only caught the shared phrase prefix can win)
+#   max   - collect the whole window, fire its highest-scoring detection at expiry
+#   vote  - fire as soon as VOTE_N detections agree on a label (default 2)
+AGGREGATIONS = ("first", "max", "vote")
+DEFAULT_AGGREGATION = "first"
+DEFAULT_VOTE_N = 2
+
 # Classes that carry meaning while waiting for the wake word. Everything else —
 # every command — is ignored in LISTENING: a door slam that scores ``la`` must
 # not look like the system is considering a command.
@@ -72,10 +81,11 @@ class SimEvent:
     """One state-machine transition, emitted only when something happens."""
 
     t_s: float
-    kind: str  # "wake" | "command" | "timeout"
+    kind: str  # "wake" | "command" | "timeout" | "executed"
     label: Optional[str] = None
     score: Optional[float] = None
     after_wake_s: Optional[float] = None
+    detail: Optional[str] = None  # how the decision was reached (aggregation)
 
     def line(self, window_s: float, exec_s: float = DEFAULT_EXEC_S) -> str:
         """Human line for the console — ASCII states so it greps cleanly."""
@@ -87,10 +97,12 @@ class SimEvent:
                 f"eligible: see banner)"
             )
         if self.kind == "command":
+            detail = f", {self.detail}" if self.detail else ""
             return (
                 f"[{stamp}] {STATE_COMMAND} -> {STATE_EXECUTING}  "
                 f"EXECUTING {self.label} {self.score:.3f} "
-                f"({self.after_wake_s:.2f}s after wake) — listening again in {exec_s:.1f}s"
+                f"({self.after_wake_s:.2f}s after wake{detail}) — "
+                f"listening again in {exec_s:.1f}s"
             )
         if self.kind == "executed":
             return (
@@ -120,6 +132,8 @@ class WakeCommandSimulator:
         eligible: Sequence[str] = DEFAULT_ELIGIBLE,
         *,
         exec_s: float = DEFAULT_EXEC_S,
+        aggregate: str = DEFAULT_AGGREGATION,
+        vote_n: int = DEFAULT_VOTE_N,
         wake_label: str = "wake",
         null_class: str = "noise",
     ) -> None:
@@ -127,8 +141,14 @@ class WakeCommandSimulator:
             raise ValueError(f"window_s must be > 0, got {thresholds.window_s}")
         if exec_s < 0:
             raise ValueError(f"exec_s must be >= 0, got {exec_s}")
+        if aggregate not in AGGREGATIONS:
+            raise ValueError(f"aggregate must be one of {AGGREGATIONS}, got {aggregate!r}")
+        if vote_n < 1:
+            raise ValueError(f"vote_n must be >= 1, got {vote_n}")
         self.window_s = thresholds.window_s
         self.exec_s = exec_s
+        self.aggregate = aggregate
+        self.vote_n = vote_n
         self.eligible = tuple(eligible)
         self.wake_label = wake_label
         self.null_class = null_class
@@ -136,6 +156,9 @@ class WakeCommandSimulator:
         self.wake_t_s: Optional[float] = None
         self.exec_started_s: Optional[float] = None
         self.executing_label: Optional[str] = None
+        # Evidence collected inside the current COMMAND window
+        self.pending_best: dict[str, float] = {}
+        self.pending_counts: dict[str, int] = {}
         self.wakes = 0
         self.commands: list[str] = []
         self.timeouts = 0
@@ -162,14 +185,20 @@ class WakeCommandSimulator:
             label = detection.label
             if label in self.eligible:
                 after = t_s - self.wake_t_s if self.wake_t_s is not None else 0.0
-                self.state = STATE_EXECUTING
-                self.wake_t_s = None
-                self.exec_started_s = t_s
-                self.executing_label = label
-                self.commands.append(label)
-                return SimEvent(
-                    t_s, "command", label=label, score=detection.score, after_wake_s=after
-                )
+                self.pending_best[label] = max(self.pending_best.get(label, 0.0), detection.score)
+                self.pending_counts[label] = self.pending_counts.get(label, 0) + 1
+                if self.aggregate == "first":
+                    return self._enter_executing(t_s, label, detection.score, after)
+                if self.aggregate == "vote" and self.pending_counts[label] >= self.vote_n:
+                    return self._enter_executing(
+                        t_s,
+                        label,
+                        self.pending_best[label],
+                        after,
+                        detail=f"{self.pending_counts[label]} vote(s)",
+                    )
+                # max/vote: keep listening for stronger evidence until expiry
+                return None
             # wake/noise inside the command window do not restart its clock, and
             # non-eligible commands are ignored until the window closes.
             return None
@@ -177,9 +206,27 @@ class WakeCommandSimulator:
         if detection.label == self.wake_label:
             self.state = STATE_COMMAND
             self.wake_t_s = t_s
+            self._clear_pending()
             self.wakes += 1
             return SimEvent(t_s, "wake", label=self.wake_label, score=detection.score)
         return None
+
+    def _enter_executing(
+        self, t_s: float, label: str, score: float, after: float, detail: Optional[str] = None
+    ) -> SimEvent:
+        self.state = STATE_EXECUTING
+        self.wake_t_s = None
+        self.exec_started_s = t_s
+        self.executing_label = label
+        self.commands.append(label)
+        self._clear_pending()
+        return SimEvent(
+            t_s, "command", label=label, score=score, after_wake_s=after, detail=detail
+        )
+
+    def _clear_pending(self) -> None:
+        self.pending_best.clear()
+        self.pending_counts.clear()
 
     def _finish_exec_if_due(self, t_s: float) -> Optional[SimEvent]:
         if self.exec_started_s is None:
@@ -197,15 +244,32 @@ class WakeCommandSimulator:
         if self.wake_t_s is None:
             return None
         elapsed = t_s - self.wake_t_s
-        if elapsed >= self.window_s:
-            self._to_listening()
-            self.timeouts += 1
-            return SimEvent(t_s, "timeout", after_wake_s=elapsed)
+        if elapsed < self.window_s:
+            return None
+        # Window closed: aggregated modes decide now, from the evidence collected.
+        choice = self._pending_choice()
+        if choice is not None:
+            label, score, detail = choice
+            return self._enter_executing(t_s, label, score, elapsed, detail=detail)
+        self._to_listening()
+        self.timeouts += 1
+        return SimEvent(t_s, "timeout", after_wake_s=elapsed)
+
+    def _pending_choice(self) -> Optional[tuple[str, float, str]]:
+        """Best deferred decision at window end, or ``None`` (=> timeout)."""
+        if not self.pending_best:
+            return None
+        if self.aggregate == "max":
+            label = max(self.pending_best, key=lambda k: self.pending_best[k])
+            n = sum(self.pending_counts.values())
+            return label, self.pending_best[label], f"best of {n} detection(s) at window end"
+        # vote: expiry with fewer than vote_n agreeing hits is not a decision
         return None
 
     def _to_listening(self) -> None:
         self.state = STATE_LISTENING
         self.wake_t_s = None
+        self._clear_pending()
 
     def ignore_reason(self, detection: Detection) -> Optional[str]:
         """Why this window cannot act right now (``None`` = it can act).
@@ -249,11 +313,15 @@ def run_sim_session(
     *,
     eligible: Sequence[str] = DEFAULT_ELIGIBLE,
     exec_s: float = DEFAULT_EXEC_S,
+    aggregate: str = DEFAULT_AGGREGATION,
+    vote_n: int = DEFAULT_VOTE_N,
     log: Callable[[str], None] = flush_print,
     stream_windows: bool = True,
 ) -> WakeCommandSimulator:
     """Drive the simulator from a live block stream (shared scoring path)."""
-    sim = WakeCommandSimulator(thresholds, eligible, exec_s=exec_s)
+    sim = WakeCommandSimulator(
+        thresholds, eligible, exec_s=exec_s, aggregate=aggregate, vote_n=vote_n
+    )
     scored = 0
     for t_s, detection in score_stream(blocks, runner, mfcc, thresholds, labels):
         scored += 1
@@ -268,8 +336,11 @@ def run_sim_session(
 
 
 __all__ = [
+    "AGGREGATIONS",
+    "DEFAULT_AGGREGATION",
     "DEFAULT_ELIGIBLE",
     "DEFAULT_EXEC_S",
+    "DEFAULT_VOTE_N",
     "LISTENING_LABELS",
     "STATE_COMMAND",
     "STATE_EXECUTING",
@@ -309,6 +380,15 @@ def sim_command(
     ),
     exec_s: float = typer.Option(
         DEFAULT_EXEC_S, "--exec-s", help="Seconds spent EXECUTING before listening resumes."
+    ),
+    aggregate: str = typer.Option(
+        DEFAULT_AGGREGATION,
+        "--aggregate",
+        help="How the 5s window decides: first (commit to the first detection), "
+        "max (best score at window end), vote (fire when N agree).",
+    ),
+    vote_n: int = typer.Option(
+        DEFAULT_VOTE_N, "--vote-n", help="Agreeing detections needed with --aggregate vote."
     ),
 ) -> None:
     """SIMULATE the wake → command state machine on the host mic (not the device).
@@ -352,7 +432,7 @@ def sim_command(
     typer.echo(
         f"states: LISTENING --wake--> COMMAND ({settings.window_s:.1f}s; "
         f"eligible: {' '.join(eligible_labels)}) --command--> EXECUTING ({exec_s:.1f}s) "
-        f"--> LISTENING   (COMMAND --timeout--> LISTENING)"
+        f"--> LISTENING   (COMMAND --timeout--> LISTENING)  aggregate={aggregate}"
         + ("" if not decisions_only else "  [per-window labels hidden]")
     )
     try:
@@ -364,6 +444,8 @@ def sim_command(
             class_labels,
             eligible=eligible_labels,
             exec_s=exec_s,
+            aggregate=aggregate,
+            vote_n=vote_n,
             log=flush_print,
             stream_windows=not decisions_only,
         )

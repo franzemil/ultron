@@ -82,17 +82,20 @@ def _write_archive(path, n, classes, seed=42):
 def test_conversion_smoke_random_model(tmp_path):
     """Risk mitigation: prove the ONNX → onnx2tf → int8/fp16 path on random weights.
 
-    Uses T8's real ``KwsNet`` architecture with a fixed seed and spread logits
-    so argmax is robust to int8 rounding; asserts all artifacts, the frozen
-    label order and the ≥ 99% gate.
+    Uses T8's real ``KwsNet`` architecture with a fixed seed and *strongly* spread
+    logits (``logit_scale=40``): randomly initialised weights otherwise produce
+    near-uniform outputs and int8 rounding flips their argmax, which is an artefact
+    of the fixture — a trained model is confident, as A-002 measured (99.80% parity
+    on the project archive). Calibration uses 64 samples so the int8 ranges are not
+    estimated from a handful of random feature rows.
     """
     from ultron_model.export import reference_model
 
     rng = np.random.default_rng(42)
     features = rng.standard_normal((64, 100, 13)).astype(np.float32)
-    model = reference_model(len(LABELS), seed=42, logit_scale=8.0)
+    model = reference_model(len(LABELS), seed=42, logit_scale=40.0)
 
-    result = export_tflite(model, LABELS, features, tmp_path, max_calibration=16, max_parity=64)
+    result = export_tflite(model, LABELS, features, tmp_path, max_calibration=64, max_parity=64)
 
     assert (tmp_path / "model.onnx").is_file()
     assert (tmp_path / "model_int8.tflite").is_file()
