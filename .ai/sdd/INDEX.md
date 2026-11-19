@@ -15,4 +15,9 @@
 
 Approval order follows the milestones: approve 001 → implement Milestone 1 while reviewing 002,
 and so on. Q-011 (wiper stop) is the only open question system-wide and gates **only spec 003**.
+
+**Open amendment:** [A-001 — three-way split train/validate/test](amendments/A-001-three-way-split.md)
+(`amendment:A-001:proposed`) rewords NFR-003, raises NFR-005's reserved-set minimums and adds
+FR-037 (selection steps refuse to read the test split). It blocks any further split, sweep or
+report work until the owner approves §5 and answers Q-A1…Q-A3.
 Task-level dependencies and the derived critical path: [CRITICAL-PATH.md](CRITICAL-PATH.md).

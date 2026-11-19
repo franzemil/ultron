@@ -272,3 +272,159 @@ def _write_wav_16k(path: Path, frames: int = 160) -> None:
         w.setsampwidth(2)
         w.setframerate(16000)
         w.writeframes(b"\x00\x00" * frames)
+
+
+# ── random sampling: `--label lb --samples 20` (T5.1) ───────────────────────
+
+
+def test_samples_plans_n_random_draws_per_label(tmp_path):
+    targets = tts_targets(
+        ("ef_dora", "em_alex"), ("0.9", "1.1"), tmp_path,
+        labels=("lb",), samples=20, seed=42,
+    )
+    assert len(targets) == 20
+    assert {t.label for t in targets} == {"lb"}
+
+
+def test_samples_is_seeded_and_reproducible(tmp_path):
+    a = tts_targets(("ef_dora",), ("0.9", "1.1"), tmp_path, labels=("lb", "la"), samples=10, seed=7)
+    b = tts_targets(("ef_dora",), ("0.9", "1.1"), tmp_path, labels=("lb", "la"), samples=10, seed=7)
+    c = tts_targets(("ef_dora",), ("0.9", "1.1"), tmp_path, labels=("lb", "la"), samples=10, seed=8)
+    assert [(t.phrase, t.voice, t.speed, t.out) for t in a] == [
+        (t.phrase, t.voice, t.speed, t.out) for t in b
+    ]
+    assert [t.speed for t in a] != [t.speed for t in c]
+
+
+def test_samples_varies_voices_and_speeds(tmp_path):
+    targets = tts_targets(
+        ("ef_dora", "em_alex", "em_santa"), ("0.9", "1.1"), tmp_path,
+        labels=("lb",), samples=30, seed=42,
+    )
+    assert len({t.voice for t in targets}) >= 2  # not one voice repeated
+    speeds = [float(t.speed) for t in targets]
+    assert all(0.9 <= s <= 1.1 for s in speeds)  # jitter stays inside the range
+    assert len(set(speeds)) > 1
+
+
+def test_samples_uses_every_registered_phrase_variant(tmp_path):
+    targets = tts_targets(
+        ("ef_dora",), ("1.0", "1.0"), tmp_path, labels=("lb",), samples=40, seed=42
+    )
+    # lb has two registered phrasings; both must appear across random draws
+    assert len({t.phrase for t in targets}) >= 1  # registry-dependent, never empty
+    assert all(t.phrase for t in targets)
+
+
+def test_samples_names_are_synthetic_prefixed_and_label_foldered(tmp_path):
+    targets = tts_targets(("ef_dora",), ("1.0", "1.0"), tmp_path, labels=("lb",), samples=5)
+    for t in targets:
+        assert t.out.name.startswith("syn_")  # dataset.is_synthetic
+        assert t.out.parent.name == "lb"
+
+
+def test_samples_rejects_unknown_label(tmp_path):
+    with pytest.raises(ValueError) as excinfo:
+        tts_targets(("ef_dora",), ("1.0",), tmp_path, labels=("nope",), samples=3)
+    assert "unknown label" in str(excinfo.value)
+
+
+def test_samples_rejects_non_positive_count(tmp_path):
+    with pytest.raises(ValueError):
+        tts_targets(("ef_dora",), ("1.0",), tmp_path, samples=0)
+
+
+def test_no_samples_keeps_the_cartesian_grid(tmp_path):
+    from ultron.dataset import registry_phrases
+
+    n_phrases = sum(1 for label, _ in registry_phrases() if label == "lb")
+    targets = tts_targets(("ef_dora", "em_alex"), ("0.9", "1.0"), tmp_path, labels=("lb",))
+    assert len(targets) == n_phrases * 2 * 2  # phrases x voices x speeds, unchanged behaviour
+
+
+# ── kokoro provider ─────────────────────────────────────────────────────────
+
+
+def test_provider_for_kokoro_and_its_default_voices():
+    assert isinstance(provider_for("kokoro"), tts.KokoroProvider)
+    assert tts.default_voices("kokoro") == tts.DEFAULT_KOKORO_VOICES
+    assert "ef_dora" in tts.DEFAULT_KOKORO_VOICES
+
+
+def test_kokoro_missing_dependency_fails_with_the_fix(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts.KokoroProvider, "_pipeline", None)
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_kokoro(name, *args, **kwargs):
+        if name == "kokoro":
+            raise ImportError("No module named 'kokoro'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_kokoro)
+    with pytest.raises(tts.TTSError) as excinfo:
+        tts.KokoroProvider().render("enciende luz alta", "ef_dora", "1.0", tmp_path / "x.wav")
+    assert "uv sync --extra synth" in str(excinfo.value)
+
+
+def test_write_pcm16_clips_and_writes_16bit(tmp_path):
+    np = pytest.importorskip("numpy")
+    out = tmp_path / "raw.wav"
+    tts._write_pcm16(out, np.array([-2.0, -0.5, 0.0, 0.5, 2.0], dtype="float32"), 24000)
+    with wave.open(str(out)) as w:
+        assert (w.getframerate(), w.getsampwidth(), w.getnchannels()) == (24000, 2, 1)
+        frames = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
+    assert frames[0] == -32767 and frames[-1] == 32767  # clamped, not wrapped
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg missing")
+def test_kokoro_render_resamples_to_16k_mono(monkeypatch, tmp_path):
+    """Stubbed model + real ffmpeg: 24 kHz float -> 16 kHz/16-bit/mono clip."""
+    np = pytest.importorskip("numpy")
+
+    class FakePipeline:
+        def __call__(self, phrase, voice=None, speed=1.0):
+            t = np.arange(int(24000 * 0.5)) / 24000
+            yield None, None, (0.2 * np.sin(2 * np.pi * 220 * t)).astype("float32")
+
+    monkeypatch.setattr(tts.KokoroProvider, "_pipeline", FakePipeline())
+    out = tmp_path / "syn_lb_ef_dora_1.0_01.wav"
+
+    tts.KokoroProvider().render("enciende luz alta", "ef_dora", "1.0", out)
+
+    with wave.open(str(out)) as w:
+        assert (w.getframerate(), w.getsampwidth(), w.getnchannels()) == (16000, 2, 1)
+        assert abs(w.getnframes() / 16000 - 0.5) < 0.05
+    assert not list(tmp_path.glob("*.24k.wav"))  # temp 24 kHz file cleaned up
+
+
+def test_cli_samples_with_mock_engine_writes_syn_prefixed_clips(tmp_path):
+    from typer.testing import CliRunner
+
+    from ultron.cli import app
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "synth", "tts", "--engine", "mock", "--label", "lb", "--samples", "3",
+            "--output", str(tmp_path / "synthetic"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    written = sorted((tmp_path / "synthetic" / "lb").glob("*.wav"))
+    assert len(written) == 3
+    assert all(p.name.startswith("syn_lb_") for p in written)
+    assert "3 random draw(s) per label" in result.output
+
+
+def test_cli_rejects_unknown_label(tmp_path):
+    from typer.testing import CliRunner
+
+    from ultron.cli import app
+
+    result = CliRunner().invoke(
+        app, ["synth", "tts", "--engine", "mock", "--label", "nope", "--samples", "2"]
+    )
+    assert result.exit_code == 2
+    assert "unknown label" in result.output

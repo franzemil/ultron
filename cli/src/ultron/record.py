@@ -29,7 +29,7 @@ import sounddevice as sd
 import typer
 from rich.console import Console
 
-from ultron.dataset import REGISTRY_IDS
+from ultron.dataset import REGISTRY_IDS, check_dataset_root
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -186,12 +186,16 @@ def record_command(
         None, "--device", "-d", help="Input device index or name substring."
     ),
     out_dir: str = typer.Option(
-        "dataset/originals", "--out-dir", "-o", help="Output dataset directory."
+        "dataset", "--out-dir", "-o", help="Dataset root directory (default dataset/)."
     ),
 ) -> None:
     """Interactively record training WAVs for selected registry codes."""
     device_index = _pick_device(device)
-    out_root = Path(out_dir)
+    try:
+        out_root = check_dataset_root(out_dir)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2)
 
     registry = _registry()
     codes = sorted(REGISTRY_IDS)

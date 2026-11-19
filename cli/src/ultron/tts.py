@@ -31,6 +31,11 @@ SAMPLE_WIDTH = 2  # 16-bit
 DEFAULT_MOCK_VOICES = ("Mónica", "Paulina", "Eddy")
 DEFAULT_MOCK_SPEEDS = ("0.9", "1.0", "1.1")
 
+# Kokoro-82M (Apache-2.0) Spanish voices; lang_code "e" in KPipeline.
+DEFAULT_KOKORO_VOICES = ("ef_dora", "em_alex", "em_santa")
+KOKORO_LANG_CODE = "e"  # Spanish
+KOKORO_SAMPLE_RATE = 24000  # Kokoro renders at 24 kHz; ffmpeg brings it to 16 kHz
+
 
 class TTSError(RuntimeError):
     pass
@@ -163,12 +168,86 @@ class MockProvider(TTSProvider):
             w.writeframes(frames)
 
 
+class KokoroProvider(TTSProvider):
+    """Open-source neural Spanish TTS: Kokoro-82M (Apache-2.0), fully offline.
+
+    Kokoro renders float32 at 24 kHz; ffmpeg resamples to the pipeline's
+    16 kHz / 16-bit / mono and the same seeded determinism rule applies
+    (same phrase + voice + speed => same bytes for a pinned model).
+
+    The 82 MB model is fetched once from Hugging Face and cached by the
+    ``kokoro`` package; after that the machine can render offline. Install with
+    ``uv sync --extra synth``.
+    """
+
+    _pipeline = None  # class-level cache: loading the model takes ~60 s
+
+    def __init__(self, seed: int = 42) -> None:
+        self.seed = seed
+
+    def _get_pipeline(self):
+        if KokoroProvider._pipeline is None:
+            try:
+                from kokoro import KPipeline
+            except ImportError as exc:  # pragma: no cover - depends on env
+                raise TTSError(
+                    "kokoro is not installed — run `uv sync --extra synth` "
+                    "(or `uv pip install kokoro`), then retry with --engine kokoro"
+                ) from exc
+            KokoroProvider._pipeline = KPipeline(lang_code=KOKORO_LANG_CODE)
+        return KokoroProvider._pipeline
+
+    def render(self, phrase: str, voice: str, speed: str, out: Path, dry_run: bool = False) -> None:
+        if dry_run:
+            print(f'  kokoro -v {voice} -s {speed} {phrase!r} -> {out}')
+            return
+        import numpy as np
+
+        pipeline = self._get_pipeline()
+        chunks = [audio for _gs, _ps, audio in pipeline(phrase, voice=voice, speed=float(speed))]
+        if not chunks:
+            raise TTSError(f"kokoro produced no audio for {phrase!r} (voice={voice})")
+        audio = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+
+        out.parent.mkdir(parents=True, exist_ok=True)
+        raw = out.with_name(out.stem + ".24k.wav")
+        try:
+            _write_pcm16(raw, audio, KOKORO_SAMPLE_RATE)
+            _ffmpeg_convert(raw, out)
+        finally:
+            raw.unlink(missing_ok=True)
+
+
+def _write_pcm16(path: Path, audio, sample_rate: int) -> None:
+    """Write float audio in [-1, 1] as 16-bit PCM mono (no extra dependency)."""
+    import numpy as np
+
+    clipped = np.clip(np.asarray(audio, dtype="float32"), -1.0, 1.0)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(SAMPLE_WIDTH)
+        w.setframerate(sample_rate)
+        w.writeframes((clipped * 32767.0).astype("<i2").tobytes())
+
+
 def provider_for(engine: str, seed: int = 42) -> TTSProvider:
     engine = engine.lower()
     if engine == "say":
         return SayProvider()
+    if engine == "kokoro":
+        return KokoroProvider(seed=seed)
     if engine == "mock":
         return MockProvider(seed=seed)
     if engine == "auto":
         return SayProvider() if shutil.which("say") else MockProvider(seed=seed)
-    raise TTSError(f"unknown TTS engine: {engine} (use say|mock|auto)")
+    raise TTSError(f"unknown TTS engine: {engine} (use say|kokoro|mock|auto)")
+
+
+def default_voices(engine: str) -> tuple[str, ...]:
+    """Spanish voices that suit the requested engine (no probing for kokoro)."""
+    engine = engine.lower()
+    if engine == "kokoro":
+        return DEFAULT_KOKORO_VOICES
+    if engine == "mock":
+        return DEFAULT_MOCK_VOICES
+    return tuple(say_voices()) or DEFAULT_MOCK_VOICES

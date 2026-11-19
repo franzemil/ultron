@@ -10,6 +10,11 @@ dependencies = ["ultron", "ultron-model"]
 #   uv sync --extra export
 export = ["ultron-model[export]"]
 
+# Open-source neural Spanish TTS for synthetic phrases (T5.1, Kokoro-82M,
+# Apache-2.0). Opt-in: `ultron synth tts --engine kokoro` fails loudly without it.
+#   uv sync --extra synth
+synth = ["kokoro"]
+
 [workspace]
 members = ["cli", "model"]
 

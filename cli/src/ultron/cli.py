@@ -302,37 +302,57 @@ def synth_tts(
         "0.9,1.0,1.1", "--speeds", help="Comma-separated speaking speeds"
     ),
     engine: str = typer.Option(
-        "auto", "--engine", help="TTS engine: say (macOS), mock (deterministic offline), auto"
+        "auto",
+        "--engine",
+        help="TTS engine: say (macOS), kokoro (open-source neural, offline), mock, auto",
+    ),
+    label: str = typer.Option(
+        "", "--label", "-l", help="Comma-separated label ids to generate (default: all registered)"
+    ),
+    samples: int = typer.Option(
+        -1,
+        "--samples",
+        "-n",
+        help="Generate N random draws per label (phrase x voice x jittered speed); "
+        "-1 = full cartesian grid",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="List the render plan without writing any file"
     ),
 ) -> None:
-    """Render every registered phrase in several Spanish TTS voices x speeds (seeded)."""
+    """Render registered phrases as Spanish TTS clips (syn_* under synthetic/)."""
     voice_list = tuple(v.strip() for v in voices.split(",") if v.strip()) if voices else ()
     speed_list = tuple(s.strip() for s in speeds.split(",") if s.strip())
     if not voice_list:
-        voice_list = tuple(tts.say_voices()) or tts.DEFAULT_MOCK_VOICES
+        voice_list = tts.default_voices(engine)
     if not speed_list:
         speed_list = tts.DEFAULT_MOCK_SPEEDS
+    label_list = tuple(l.strip() for l in label.split(",") if l.strip())
 
-    rendered = synth.render_tts(
-        voices=voice_list,
-        speeds=speed_list,
-        output=Path(output),
-        seed=seed,
-        engine=engine,
-        dry_run=dry_run,
-    )
+    try:
+        rendered = synth.render_tts(
+            voices=voice_list,
+            speeds=speed_list,
+            output=Path(output),
+            seed=seed,
+            engine=engine,
+            dry_run=dry_run,
+            labels=label_list or None,
+            samples=None if samples < 0 else samples,
+        )
+    except (tts.TTSError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2)
     if dry_run:
         typer.echo("DRY-RUN complete — nothing written.")
         return
     total = sum(rendered.values())
-    typer.echo(
-        f"TTS render complete: {total} clips across {len(voice_list)} voices x {len(speed_list)} speeds"
-    )
-    for label, count in sorted(rendered.items()):
-        typer.echo(f"  {label}: {count}")
+    scope = f"{len(voice_list)} voices x {len(speed_list)} speeds"
+    if samples >= 0:
+        scope = f"{samples} random draw(s) per label over {scope}"
+    typer.echo(f"TTS render complete: {total} clips ({scope})")
+    for label_id, count in sorted(rendered.items()):
+        typer.echo(f"  {label_id}: {count}")
 
 
 @synth_app.command(name="noise")

@@ -89,6 +89,31 @@ def _next_nn(label_dir, label, mic):
     return best + 1
 
 
+def check_dataset_root(out_root):
+    """Return ``out_root`` as a Path, refusing a doubled ``.../originals`` root.
+
+    Writers (``record``, ``split``) address clips as ``<root>/originals/<label>``.
+    Passing ``dataset/originals`` therefore lands them in
+    ``dataset/originals/originals/<label>`` — and because the tree *is* the
+    labelling in this system, those clips silently drop out of ``features`` and
+    ``train`` instead of failing (incident 2026-11-18: 25 split segments written
+    one directory too deep). A doubled root is a loud error, not a second tree.
+    """
+    root = Path(out_root)
+    if root.name == "originals":
+        raise ValueError(
+            f"--out-dir points at {root}/ — pass the dataset root instead "
+            f"(e.g. 'dataset'); clips written under a doubled path are invisible "
+            f"to features/train"
+        )
+    return root
+
+
+def resolve_label_dir(out_root, label):
+    """Return ``<dataset root>/originals/<label>`` (see ``check_dataset_root``)."""
+    return check_dataset_root(out_root) / "originals" / label
+
+
 def ingest(source, label, mic, dest):
     """Copy and label WAVs from ANY source into dataset/originals/<label>/.
 
