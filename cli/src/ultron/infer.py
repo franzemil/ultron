@@ -37,11 +37,12 @@ one owner (spec 003-can-act, TD-013).
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence, TextIO
 
 import numpy as np
 import typer
@@ -946,6 +947,36 @@ def write_report(markdown: str, path: Path | str) -> Path:
 # ── FR-035: continuous host-mic decisions (reporting only) ──────────────────
 
 
+def format_clock(t_s: float) -> str:
+    """``mm:ss.s`` clock for the live stream (minutes unbounded past 59)."""
+    minutes, seconds = divmod(max(float(t_s), 0.0), 60.0)
+    return f"{int(minutes):02d}:{seconds:04.1f}"
+
+
+def format_live_line(t_s: float, detection: Detection) -> str:
+    """One console line for one scored window — what the model actually said.
+
+    Prints the decoded **argmax label and its score**, i.e. exactly what
+    ``decode_window`` saw for that window (the same argmax/threshold path) —
+    never a prettified guess. A window that clears its operating point is
+    marked ``✓``; a window that does not still prints its top label and score
+    (that is the ``noise noise …`` part of the stream).
+    """
+    marker = " ✓" if detection.accepted else ""
+    return f"[{format_clock(t_s)}] {detection.argmax_label} {detection.score:.3f}{marker}"
+
+
+def flush_print(line: str, stream: Optional[TextIO] = None) -> None:
+    """Write one line and flush it — a live stream must never sit in a buffer.
+
+    When piped, stdout is block-buffered; flushing per line keeps the per-window
+    stream real-time instead of dumping it in bursts.
+    """
+    out = stream if stream is not None else sys.stdout
+    out.write(line + "\n")
+    out.flush()
+
+
 @dataclass(frozen=True)
 class MicDecision:
     """One accepted detection in the live stream, with its wake association."""
@@ -968,17 +999,19 @@ class MicDecision:
         return self.after_wake_s is not None
 
     def line(self, window_s: float) -> str:
+        """Decision line — visually distinct from the per-window label stream."""
+        stamp = format_clock(self.t_s)
+        score = self.detection.score
         if self.label == "wake":
-            return f"  [{self.t_s:7.2f}s] wake          (score {self.detection.score:.3f})"
+            return f"[{stamp}] DETECTED wake (score {score:.3f})"
         if self.wake_t_s is None:
             return (
-                f"  [{self.t_s:7.2f}s] {self.label:<6}        (score "
-                f"{self.detection.score:.3f}) — no wake within the last {window_s:.1f}s"
+                f"[{stamp}] DETECTED {self.label} (score {score:.3f}) — "
+                f"no wake within the last {window_s:.1f}s"
             )
         return (
-            f"  [{self.t_s:7.2f}s] wake → {self.label:<6} (score "
-            f"{self.detection.score:.3f}, {self.after_wake_s:.2f}s after wake, "
-            f"window {window_s:.1f}s)"
+            f"[{stamp}] DETECTED wake → {self.label} (score {score:.3f}, "
+            f"{self.after_wake_s:.2f}s after wake, window {window_s:.1f}s)"
         )
 
 
@@ -1027,14 +1060,21 @@ def run_mic_session(
     thresholds: Thresholds,
     labels: Sequence[str],
     *,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = flush_print,
+    stream_windows: bool = True,
 ) -> DecisionReporter:
     """Score a live block stream: 2.0 s windows, 500 ms hop, decide + report.
 
     ``blocks`` yields int16 mono samples at 16 kHz (any block size). Every
     window is scored through the artifact and decoded with
-    ``model/thresholds.json``; accepted detections are reported with their
-    wake association (FR-035). Pure reporting — no actuation (TD-013).
+    ``model/thresholds.json``. With ``stream_windows`` (the default) **every**
+    window emits exactly one line through ``log`` the moment it is scored —
+    timestamp + decoded top label + score — so the owner can watch the model
+    think (``noise noise wake wake la la``); accepted detections additionally
+    emit a visually distinct decision line with their wake association
+    (FR-035). ``stream_windows=False`` keeps only the decision lines.
+
+    Pure reporting — no actuation, no spec 003 event semantics (TD-013).
     """
     reporter = DecisionReporter(thresholds.window_s)
     buffer = np.zeros(0, dtype=np.int16)
@@ -1058,7 +1098,10 @@ def run_mic_session(
                 scores = runner.scores(features)[0]
                 detection = decode_window(scores, labels, thresholds)
                 scored += 1
-                decision = reporter.add(window_end / SAMPLE_RATE, detection)
+                t_s = window_end / SAMPLE_RATE
+                if stream_windows:
+                    log(format_live_line(t_s, detection))
+                decision = reporter.add(t_s, detection)
                 if decision is not None:
                     log(decision.line(thresholds.window_s))
             window_end += HOP_LEN
@@ -1280,11 +1323,20 @@ def infer_mic(
     device: Optional[str] = typer.Option(
         None, "--device", "-d", help="Input device index or name substring."
     ),
+    decisions_only: bool = typer.Option(
+        False,
+        "--decisions-only",
+        help="Quiet mode: only accepted decisions, no per-window label stream.",
+    ),
 ) -> None:
-    """Score the host mic continuously; report wake → command decisions (FR-035).
+    """Score the host mic continuously; stream every window's label (FR-035).
 
-    Reports only — no actuation and no spec 003 event semantics: the device
-    state machine has exactly one owner (spec 003-can-act, TD-013).
+    One line per scored window — timestamp + decoded top label + score — so the
+    model's live thinking is visible (``noise noise wake wake la la``); accepted
+    detections also print a distinct ``DETECTED …`` line with the wake →
+    command association. Reporting only — no actuation and no spec 003 event
+    semantics: the device state machine has exactly one owner (spec 003-can-act,
+    TD-013). Use ``--decisions-only`` for the quieter decision log.
     """
     try:
         validate_model_file(model)  # FR-034: corrupt artifact fails before anything else
@@ -1304,7 +1356,13 @@ def infer_mic(
     typer.echo(f"classes: {' '.join(class_labels)}")
     typer.echo(
         f"listening ({0 if seconds <= 0 else seconds:.0f}s; 2.0s windows / 500ms hop) — "
-        f"say 'hey ultron' then a command. Reporting only: no actuation (TD-013)."
+        f"say 'hey ultron' then a command."
+        + (
+            " Per-window labels OFF (--decisions-only)."
+            if decisions_only
+            else " One line per window: [mm:ss.s] <label> <score> ✓ = accepted."
+        )
+        + " Reporting only: no actuation (TD-013)."
     )
     try:
         run_mic_session(
@@ -1313,7 +1371,8 @@ def infer_mic(
             mfcc,
             settings,
             class_labels,
-            log=lambda line: typer.echo(line),
+            log=flush_print,
+            stream_windows=not decisions_only,
         )
     except KeyboardInterrupt:
         typer.echo("\nstopped.")

@@ -48,6 +48,9 @@ from ultron.infer import (
     decode_scores,
     decode_window,
     expected_label,
+    flush_print,
+    format_clock,
+    format_live_line,
     is_labeled,
     load_thresholds,
     open_mfcc,
@@ -211,12 +214,15 @@ class StubRunner:
         self.n_classes = len(labels)
         self._script = script
         self.calls = 0
+        #: every score row actually returned, in call order (assertions)
+        self.consumed: list[list[float]] = []
 
     def scores(self, features_nwc):
         rows = []
         for _ in features_nwc:
             row = self._script[min(self.calls, len(self._script) - 1)]
             self.calls += 1
+            self.consumed.append(list(row))
             rows.append(np.asarray(row, dtype=np.float32))
         return np.stack(rows)
 
@@ -906,8 +912,175 @@ def test_run_mic_session_scores_a_fixed_stream(mfcc):
     assert len(reporter.events) == 2
     assert reporter.events[0].label == "wake"
     assert reporter.events[1].within_window is True
-    assert "wake → la" in lines[-2]
-    assert "scored 9 window(s)" in lines[-1]
+    # every window streamed a label line; the wake→command decision is distinct
+    assert len(_stream_lines(lines)) == 9
+    assert any("wake → la" in line for line in lines)
+    assert lines[-1].startswith("scored 9 window(s)")
+
+
+# ── live per-window label stream (owner follow-up) ──────────────────────────
+
+
+def _stream_lines(lines: list[str]) -> list[str]:
+    """The per-window stream lines (decisions start with ``[`` + ``DETECTED``)."""
+    return [line for line in lines if "DETECTED" not in line and not line.startswith("scored ")]
+
+
+def test_format_clock_is_mm_ss_tenths():
+    assert format_clock(0.0) == "00:00.0"
+    assert format_clock(4.5) == "00:04.5"
+    assert format_clock(65.5) == "01:05.5"
+    assert format_clock(-1.0) == "00:00.0"
+
+
+def test_format_live_line_prints_the_decoded_top_label_and_score():
+    settings = make_thresholds()
+    accepted = decode_window(np.array(probs(wake=0.97, noise=0.01)), LABELS, settings)
+    rejected = decode_window(np.array(probs(noise=0.98, la=0.01)), LABELS, settings)
+    assert format_live_line(4.5, accepted) == "[00:04.5] wake 0.970 ✓"
+    # below every threshold the top label is still printed — this is the `noise noise` stream
+    assert format_live_line(4.5, rejected) == "[00:04.5] noise 0.980"
+    assert rejected.accepted is False and "noise" in format_live_line(4.5, rejected)
+
+
+def test_live_line_never_uses_a_pretty_label_for_a_rejected_window():
+    """Honesty: a rejected window prints its argmax label, not the expected one."""
+    settings = make_thresholds()
+    detection = decode_window(np.array(probs(lb=0.70, la=0.60)), LABELS, settings)
+    assert not detection.accepted
+    line = format_live_line(2.0, detection)
+    assert "lb 0.700" in line and "la" not in line and "✓" not in line
+
+
+def test_run_mic_session_emits_one_stream_line_per_window_in_order(mfcc):
+    """Every scored window → exactly one line, in scoring order, label = decode."""
+    script = (
+        [probs(noise=0.95)] * 2
+        + [probs(wake=0.97)] * 2
+        + [probs(la=0.96)] * 2
+        + [probs(lb=0.40, la=0.35)]  # below thresholds → still streamed
+    )
+    stub = StubRunner(script)
+    lines: list[str] = []
+    audio = np.zeros(6 * SAMPLE_RATE, dtype=np.int16)
+    run_mic_session(
+        [audio[i : i + 8000] for i in range(0, len(audio), 8000)],
+        stub,
+        mfcc,
+        make_thresholds(),
+        LABELS,
+        log=lines.append,
+    )
+    stream = _stream_lines(lines)
+    # 9 windows are scored; the scripted runner repeats its last row
+    assert stub.calls == 9
+    assert len(stream) == 9  # one line per window, nothing batched or dropped
+    assert [line.split("] ")[1].split()[0] for line in stream] == [
+        "noise",
+        "noise",
+        "wake",
+        "wake",
+        "la",
+        "la",
+        "lb",
+        "lb",
+        "lb",
+    ]
+    # timestamps advance by the 500 ms hop: 2.0, 2.5 … 6.0 s
+    stamps = [line.split("]")[0][1:] for line in stream]
+    assert stamps == ["00:02.0", "00:02.5", "00:03.0", "00:03.5", "00:04.0",
+                      "00:04.5", "00:05.0", "00:05.5", "00:06.0"]
+    # the stream label is exactly what the decoder produced for that window
+    expected = [
+        decode_window(np.asarray(row, np.float32), LABELS, make_thresholds()).argmax_label
+        for row in stub.consumed
+    ]
+    assert [line.split("] ")[1].split()[0] for line in stream] == expected
+
+
+def test_run_mic_session_decisions_only_suppresses_the_stream(mfcc):
+    script = [probs(wake=0.97), probs(la=0.96)] + [probs(noise=0.98)] * 7
+    audio = np.zeros(6 * SAMPLE_RATE, dtype=np.int16)
+    lines: list[str] = []
+    run_mic_session(
+        [audio[i : i + 8000] for i in range(0, len(audio), 8000)],
+        StubRunner(script),
+        mfcc,
+        make_thresholds(),
+        LABELS,
+        log=lines.append,
+        stream_windows=False,
+    )
+    assert _stream_lines(lines) == []  # no per-window noise
+    assert any("DETECTED wake" in line for line in lines)  # decisions kept
+    assert any("DETECTED wake → la" in line for line in lines)
+    assert lines[-1].startswith("scored 9 window(s)")
+
+
+def test_streaming_is_immediate_not_batched(mfcc):
+    """Each window logs before the next window is scored (no end-of-run dump)."""
+    trace: list[str] = []
+
+    class TracingRunner(StubRunner):
+        def scores(self, features_nwc):
+            trace.append("score")
+            return super().scores(features_nwc)
+
+    audio = np.zeros(6 * SAMPLE_RATE, dtype=np.int16)
+    run_mic_session(
+        [audio[i : i + 8000] for i in range(0, len(audio), 8000)],
+        TracingRunner([probs(noise=0.9)]),
+        mfcc,
+        make_thresholds(),
+        LABELS,
+        log=lambda line: trace.append("log"),
+    )
+    # strict interleave: score, log, score, log, … — never score,score,…,log,…
+    assert trace[:6] == ["score", "log"] * 3
+    assert trace == ["score", "log"] * 9 + ["log"]  # + the closing summary line
+
+
+def test_flush_print_flushes_after_every_line():
+    """A piped stdout must not buffer the stream (write+flush per line)."""
+
+    class RecordingStream:
+        def __init__(self):
+            self.calls: list[tuple[str, str]] = []
+
+        def write(self, text):
+            self.calls.append(("write", text))
+
+        def flush(self):
+            self.calls.append(("flush", ""))
+
+    stream = RecordingStream()
+    flush_print("[00:02.0] noise 0.91", stream)
+    flush_print("[00:02.5] wake 0.97 ✓", stream)
+    assert stream.calls == [
+        ("write", "[00:02.0] noise 0.91\n"),
+        ("flush", ""),
+        ("write", "[00:02.5] wake 0.97 ✓\n"),
+        ("flush", ""),
+    ]
+
+
+def test_flush_print_defaults_to_stdout(monkeypatch):
+    class RecordingStream:
+        def __init__(self):
+            self.text = ""
+            self.flushes = 0
+
+        def write(self, text):
+            self.text += text
+
+        def flush(self):
+            self.flushes += 1
+
+    stream = RecordingStream()
+    monkeypatch.setattr(infer_mod.sys, "stdout", stream)
+    flush_print("[00:03.0] la 0.99 ✓")
+    assert stream.text == "[00:03.0] la 0.99 ✓\n"
+    assert stream.flushes == 1
 
 
 def test_run_mic_session_is_block_size_independent(mfcc):
@@ -1147,6 +1320,77 @@ def test_cli_missing_checkpoint_for_a_labeled_folder_is_loud(tmp_path, monkeypat
     assert result.exit_code == 2
     assert "ultron train run" in result.output
     assert not (tmp_path / "build" / "out.md").exists()
+
+
+def _mic_cli_fixtures(tmp_path: Path, script: list[list[float]], monkeypatch, *, blocks=6) -> list[str]:
+    """CLI wiring for `infer mic` with a stubbed microphone + stubbed runner."""
+    labels_path = tmp_path / "build" / "labels.json"
+    labels_path.parent.mkdir(parents=True, exist_ok=True)
+    labels_path.write_text(json.dumps(LABELS), encoding="utf-8")
+    model = dummy_model(tmp_path / "build" / "model_int8.tflite")
+    thresholds_path = tmp_path / "thresholds.json"
+    thresholds_path.write_text(
+        json.dumps(thresholds_doc(commands={"lb": {"threshold": 0.80, "margin": 0.10}})),
+        encoding="utf-8",
+    )
+    audio = np.zeros(blocks * 8000, dtype=np.int16)
+    monkeypatch.setattr(
+        infer_mod,
+        "mic_blocks",
+        lambda seconds=None, device=None, sample_rate=None: (
+            audio[i : i + 8000] for i in range(0, len(audio), 8000)
+        ),
+    )
+    monkeypatch.setattr(infer_mod, "TfliteRunner", lambda _path: StubRunner(script))
+    return [
+        "infer", "mic",
+        "--model", str(model),
+        "--thresholds", str(thresholds_path),
+        "--seconds", "3",
+    ]
+
+
+def test_cli_mic_streams_one_label_line_per_window(tmp_path, monkeypatch):
+    """Default behaviour: the live label stream is printed as windows score."""
+    script = [probs(noise=0.95), probs(noise=0.93), probs(noise=0.91)]
+    args = _mic_cli_fixtures(tmp_path, script, monkeypatch)
+    result = runner_cli.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    text = result.output
+    # 6 × 500 ms blocks = 3 s ⇒ three scored windows (2.0 s, 2.5 s, 3.0 s)
+    assert "[00:02.0] noise 0.950" in text
+    assert "[00:02.5] noise 0.930" in text
+    assert "[00:03.0] noise 0.910" in text
+    assert "scored 3 window(s)" in text
+    # decision lines stay visually distinct from the per-window stream
+    assert "DETECTED" not in text  # noise never decodes to a detection
+
+
+def test_cli_mic_decisions_only_flag_suppresses_the_stream(tmp_path, monkeypatch):
+    script = [probs(noise=0.95), probs(lb=0.99), probs(lb=0.98)]
+    args = _mic_cli_fixtures(tmp_path, script, monkeypatch)
+    result = runner_cli.invoke(app, args + ["--decisions-only"])
+    assert result.exit_code == 0, result.output
+    assert "Per-window labels OFF" in result.output
+    assert "[00:02.5] lb" not in result.output  # no per-window stream
+    assert "DETECTED lb" in result.output  # decisions kept
+    assert "scored 3 window(s)" in result.output
+
+
+def test_cli_mic_stream_marks_accepted_windows(tmp_path, monkeypatch):
+    script = [probs(wake=0.97), probs(wake=0.96), probs(wake=0.95)]
+    args = _mic_cli_fixtures(tmp_path, script, monkeypatch)
+    result = runner_cli.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert "[00:02.0] wake 0.970 ✓" in result.output  # accepted marker in the stream
+    assert "DETECTED wake" in result.output
+
+
+def test_cli_mic_help_documents_the_stream_flags():
+    result = runner_cli.invoke(app, ["infer", "mic", "--help"])
+    assert result.exit_code == 0
+    assert "--decisions-only" in result.output
+    assert "One line per scored window" in result.output
 
 
 # ── End-to-end with real artifacts (heavy stack — requires local run) ───────
