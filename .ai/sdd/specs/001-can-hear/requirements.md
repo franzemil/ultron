@@ -8,8 +8,8 @@
 ## Overview
 
 Milestone 1 builds ultron's **ears**: the local data pipeline. A uv-based CLI (`ultron`), dataset tooling
-(ingest / validate / dcfix) with the owner-resolved command registry, seeded augmentation
-(+ optional synthetic data), and the shared C MFCC library
+(ingest / validate / dcfix) with the owner-resolved command registry, recorder utilities for both
+candidate devices, seeded augmentation (+ optional synthetic data), and the shared C MFCC library
 proven frame-for-frame against the lampara-aliz Edge Impulse reference extraction.
 
 The system being built overall: a Spanish voice-actuation car manager — wake on **"hey ultron"**,
@@ -27,8 +27,8 @@ devices; a benchmark (spec 004) decides which one ships.
 ## Non-Goals
 
 - No model training or export here (spec 002).
-- No device runtime/firmware behavior (spec 003) — the WAV recorders moved there too
-  (amendment 2026-11-19, owner decision).
+- No device runtime/firmware behavior (spec 003) — the recorders here are utilities, not shipping
+  firmware; the on-device recording pass moved there (amendment 2026-11-19, owner decision).
 - No Edge Impulse upload here (spec 005).
 
 ## Shared system context (applies to every milestone spec)
@@ -53,9 +53,10 @@ devices; a benchmark (spec 004) decides which one ships.
 
 ## User Stories
 
-> **Amendment (2026-11-19, owner-approved):** US-002 (device WAV recorders) moved to
-> [spec 003](../003-can-act/) as T16 — device recording is not required until the hardware
-> milestone. Milestone 1 runs on owner-supplied external recordings (`mic=ext`).
+> **Amendment (2026-11-19, owner-approved):** the recorder utilities ship here (T4,
+> host-verified); the on-device US-002 recording pass moved to
+> [spec 003](../003-can-act/) as T28 — device recording is not required until the hardware
+> milestone. Milestone 1 runs on owner-supplied external recordings (`mic=ext`, US-008).
 
 ### US-008 — Validated dataset from existing recordings
 **As a** device owner
@@ -67,6 +68,10 @@ devices; a benchmark (spec 004) decides which one ships.
   (FR-020).
 - **AC2:** `ultron dataset validate` passes every clip or exits non-zero listing failures
   (FR-021).
+
+> **Deferred (D-012):** on-device (XIAO/Pi) recording validation is an **optional, deferred pass**
+> (spec 003 T28) — it does **not** gate the Milestone 1 exit. Milestone 1 validates owner-supplied
+> external recordings (FR-020).
 
 ## Functional Requirements (EARS, MoSCoW)
 
@@ -103,6 +108,15 @@ merges, never hand-edited).
 **NFR-007 (Parity, DSP clause)** — DSP per-frame parity vs reference vectors ≤ 1e-3 max abs diff
 (float). The export clause of NFR-007 lives in spec 002.
 
+## Decisions
+
+**D-012 — Device-in-loop validation is optional and deferred (Milestone 1).** The Milestone 1
+gate is host-side: `ultron dataset validate` green on the data minimums (NFR-005, any source —
+FR-020) and per-frame MFCC parity ≤ 1e-3 (NFR-007 DSP clause). The XIAO/Pi recorder validation
+pass runs later, whenever a hardware session is convenient — moved to spec 003 (T28; owner
+decision 2026-11-19).
+*(Owner decision 2026-11-17: hardware validation must not block the phase — it can be done later.)*
+
 ## Implementation FAQ
 
 **Q-003: Which mic on the Pi? What if none is present?**
@@ -115,13 +129,14 @@ loudly (no silent training on corrupt data — lampara lesson).
 
 ## Success Metrics
 
-- **Milestone 1 — "can hear"**: external dataset validated (US-008) + DSP parity green
-  (NFR-007 DSP clause); recorders deferred to spec 003 (T16).
+- **Milestone 1 — "can hear"**: external dataset validated (US-008) and recorder utilities
+  implemented + host-verified (T4) + DSP parity green (NFR-007 DSP clause); the on-device US-002
+  recording pass is a deferred, optional pass in spec 003 (T28, D-012).
 
 ## Risks
 
 - **Mic domain mismatch** (external/USB/PDM mics sound different → model biased to the
-  recording mic): v1 trains on external audio; T16 (spec 003) adds device-mic recordings for a
+  recording mic): v1 trains on external audio; T28 (spec 003) adds device-mic recordings for a
   later retrain; the bench (spec 004) measures per-device accuracy.
 
 ## Confirm before building
@@ -129,3 +144,36 @@ loudly (no silent training on corrupt data — lampara lesson).
 No implementation code until this spec's `.status` reads `tasks:approved`. Before starting
 implementation the implementing agent restates FR-016/020–022, NFR-005/006/007 (DSP clause), and
 the shared system context in its own words. If anything is ambiguous, STOP and ask.
+
+## Interactive recorder — `ultron record` (new task)
+
+**FR-023 (Must)** — WHEN `ultron record` runs, THE SYSTEM SHALL prompt the owner to select
+which command codes to record from `model/registry.json` (10 actions + cancel, plus wake and
+noise), using an interactive rich-based prompt.
+
+**FR-024 (Must)** — WHEN recording a selected code, THE SYSTEM SHALL record `--seconds` of
+audio per attempt and save each WAV as `{label}_local_{nn:02d}.wav` under
+`dataset/originals/<label>/` with mic tag `local` (matching `dataset ingest`'s `local` mic
+tag).
+
+**FR-025 (Must)** — WHEN `--samples N` is set, THE SYSTEM SHALL record until N examples exist
+per selected code, skipping already-recorded files and continuing the sequence from the next
+free `<nn>`.
+
+**FR-026 (Must)** — WHEN the owner selects a code not present in `model/registry.json`, THE
+SYSTEM SHALL reject it, list the valid codes, and reprompt.
+
+
+## Long-take recording + pyannote split — `ultron record-long` / `ultron split` (new task T9)
+
+**FR-027 (Must)** — WHEN `ultron record-long --seconds N --label <code>` runs, THE SYSTEM SHALL record N seconds of continuous 16 kHz / 16-bit / mono audio from the host mic into a single take WAV (`take_<nn>_<label>.wav`), containing only that one label's utterances.
+
+**FR-028 (Must)** — WHEN `ultron split <take.wav>` runs with pyannote.audio VAD, THE SYSTEM SHALL segment the take into utterance regions and write each segment as `{label}_local_<nn>.wav` under `dataset/originals/<label>/` (mic tag `local`, 16 kHz / 16-bit / mono).
+
+**FR-029 (Must)** — WHEN pyannote VAD finds no speech in a take, THE SYSTEM SHALL exit non-zero listing the take and suggesting re-recording.
+
+**FR-030 (Must)** — WHEN splitting, THE SYSTEM SHALL require `--label <code>` to be a valid `model/registry.json` id (10 actions + cancel, plus wake and noise); invalid codes are rejected with a list of valid codes.
+
+**FR-031 (Must)** — THE SYSTEM SHALL require a Hugging Face API token for pyannote model download (via `PYANNOTE_HF_TOKEN` env or `--hf-token`); missing token fails fast with a clear message.
+
+**NFR-011 (Should)** — pyannote.audio segmentation should run entirely on the host; nothing related to STT/diarization runs on XIAO or Pi (no on-device speech models).

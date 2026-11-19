@@ -14,20 +14,25 @@ event + short confirmation clip → timeout — driving 9 relay channels (LM LB 
 per the Actuation Behavior Contract. Every accepted wake speaks ("Escuchando") and every executed
 command plays a short fixed confirmation clip. On the XIAO stack the relay channels are driven by a
 **companion ESP32-S3 SuperMini** connected over UART — the XIAO's pins are reserved for the
-microphone and the MAX98357A speaker; on the Pi, relays are driven directly via libgpiod. The
-XIAO stack comes up in stages: console-only (simulation mode) → audio + 2 direct relays → full
-companion stack. Both targets run the same model flatbuffer and emit identical event semantics;
-any divergence is a bug (AGENTS rule 5). This milestone also delivers the WAV recorders for both
-devices (moved from spec 001 — owner decision, 2026-11-19), enabling device-mic data collection
-once the hardware is live.
+microphone and the MAX98357A speaker; on the Pi, relays are driven directly via libgpiod. Work is
+staged (PLAN.md rollout phases): **Stage A** deploys the minimal 4-class model (`wake`, `noise`,
+`la`, `lb`, spec 002 TD-012) with events + feedback only, bringing the XIAO stack up layer by
+layer — console-only simulation → audio → 2 direct relays as scaffolding → full companion
+stack; **Stage B** wires the relays for that minimal set; and **Stage C** rolls out one command
+per cycle until the full registry is recognized. Both targets run the same model flatbuffer and
+emit identical event semantics; any divergence is a bug (AGENTS rule 5). This milestone also
+covers the device-mic recording pass (US-002, moved from spec 001 — owner decision, 2026-11-19),
+enabling device-mic data collection once the hardware is live.
 
 ## Goals
 
-1. Both devices pass the US-001 interaction script end-to-end (wake → command → actuation).
+1. Both devices pass the US-001 interaction script end-to-end on the **currently rolled-out**
+   command set (Stage A: `la`; Stage C: every command; actuation from Stage B on).
 2. Wake acceptance is confirmed audibly with "Escuchando" and every executed command with a short
    confirmation clip — identically on both targets.
 3. Identical events, timing tolerances, and boot-safe outputs on XIAO and Pi.
-4. WAV recorders for both targets (moved from spec 001) produce valid training clips.
+4. The device-mic recording pass (US-002, moved from spec 001) produces valid training clips
+   from both targets.
 5. XIAO relay actuation is delegated to a companion ESP32-S3 SuperMini over UART (XIAO pins
    reserved for microphone + speaker).
 
@@ -45,8 +50,9 @@ once the hardware is live.
 **so that** the device performs the mapped action without touching anything.
 
 **Acceptance criteria:**
-- **AC1:** Saying "hey ultron" then "enciende guiñador derecho" produces a `CMD` event for `gd`
-  and starts its mapped behavior (GD blinking 1 s on / 1 s off for 45 s).
+- **AC1:** Saying "hey ultron" then "enciende luz alta" (a command of the initially trained
+  set) produces a `CMD` event for `la` and starts its mapped behavior (LM+LB+LA steady ON).
+  Stage C re-runs this same script for each rolled-out command (T16–T24).
 - **AC2:** Saying a command phrase alone (no wake) produces no command event and no action.
 - **AC3:** Saying "hey ultron" then nothing for 5 s produces a `TIMEOUT` event and the device
   returns to wake-listening.
@@ -61,7 +67,8 @@ once the hardware is live.
 - **AC2:** The Pi recorder captures the same format from its microphone.
 - **AC3:** Every recording is DC-offset-correctable and validates (`ultron dataset validate`).
 
-*(Amendment 2026-11-19: moved from spec 001 — owner decision; implemented here as T16.)*
+*(Amendment 2026-11-19: on-device recording pass moved from spec 001 — owner decision;
+implemented here as T28 using the spec 001 T4 recorder utilities.)*
 
 ### US-004 — Deploy the identical model to both devices
 **As a** device owner
@@ -91,7 +98,8 @@ THE SYSTEM SHALL enter command-listening state within 1.5 s (XIAO) / 1.0 s (Pi) 
 utterance.
 
 **FR-002 (Must)** — WHILE in command-listening state, THE SYSTEM SHALL evaluate incoming audio
-against the command registry for up to 5 s.
+against the trained command set for up to 5 s (recognized labels = trained subset — FR-013/FR-032,
+spec 002).
 
 **FR-003 (Must)** — WHEN a command window scores ≥ its command threshold AND ≥ margin over every
 other class, THE SYSTEM SHALL emit a command event carrying the command ID and confidence.
@@ -129,21 +137,22 @@ same trigger (wake acceptance — the edge that emits `WAKE`), same timing — p
 the whole chain inside FR-001's entry budget. Audio frames captured during playback SHALL NOT
 contribute to classification decisions.
 
-**FR-023 (Must)** — WHEN a command event is emitted, THE SYSTEM SHALL play the fixed
+**FR-037 (Must)** — WHEN a command event is emitted, THE SYSTEM SHALL play the fixed
 command-confirmation clip `assets/comando.wav` — a pre-rendered clip (16 kHz / 16-bit / mono,
 ≤ 300 ms) committed to the repo and byte-identical on both targets. Playback SHALL start
 ≤ 200 ms after acceptance; audio frames overlapping playback SHALL NOT contribute to
 classification decisions (same rule as FR-019). No listening time is lost: the command window
 has already closed when the clip plays.
 
-**FR-024 (Must)** — THE SYSTEM SHALL drive the 9 relay channels only from the **companion
+**FR-038 (Must)** — THE SYSTEM SHALL drive the 9 relay channels only from the **companion
 ESP32-S3 SuperMini** (a second ESP32-S3 board wired to the XIAO over UART, 115200-8N1,
 one-way), which receives the Target Event Contract `EVT` lines from the XIAO and runs the
 Actuation Behavior Contract locally. The XIAO header budget is reserved for the PDM microphone
 and the MAX98357A I2S speaker. The companion's channels SHALL be OFF at boot; if the UART link
-is idle, the XIAO SHALL still run voice + feedback and log `DBG uart=idle`. During bring-up
-only (task T17), ≤ 2 channels may be driven directly on the XIAO as temporary scaffolding —
-removed by T10c; the shipping configuration drives all 9 from the companion.
+is idle, the XIAO SHALL still run voice + feedback and log `DBG uart=idle`. During Stage B
+bring-up only (T15 scaffolding), ≤ 2 channels may be driven directly on the XIAO as temporary
+scaffolding — removed by the end of T15; the shipping configuration drives all 9 from the
+companion.
 
 ## Actuation Behavior Contract
 
@@ -191,7 +200,7 @@ budget (≤ 1.5 s XIAO / ≤ 1.0 s Pi).
 
 ## Constraints (this milestone)
 
-- Audio output (FR-018, FR-023): XIAO — MAX98357A I2S DAC/amp + small speaker; Pi — USB audio
+- Audio output (FR-018, FR-037): XIAO — MAX98357A I2S DAC/amp + small speaker; Pi — USB audio
   dongle + powered speaker (owner-supplied). "Escuchando" and "comando" are repo-committed
   pre-rendered clips; no runtime TTS.
 - Companion ESP32-S3 SuperMini (owner-supplied, Q-013) + UART jumper wires for the XIAO relay
@@ -199,6 +208,8 @@ budget (≤ 1.5 s XIAO / ≤ 1.0 s Pi).
 - Runtime capture mics as in the shared context (XIAO PDM, Pi USB mic).
 - Mics, speakers, the relay board, and the SuperMini must be physically present before
   Milestone 3 work starts (PLAN.md hardware logistics).
+- Initial deployment model = the 4-class artifact (`wake`, `noise`, `la`, `lb` — spec 002
+  TD-012); the recognized set grows to the full registry as Stage C rollout cycles complete.
 
 ## Decisions
 
@@ -222,8 +233,9 @@ timeout returns to wake-listening.
 
 **Q-010: What actuation hardware in v1?**
 A: **Resolved.** 9 relay/driver channels (LM LB LA GD GI LPB LPA A CC) on whichever device
-ships — both targets must drive them (the bench decides the winner). XIAO: header GPIOs, PCF8574
-expander as documented fallback (TD-009). Pi: libgpiod + 3.3 V relay board.
+ships — both targets must drive them (the bench decides the winner). XIAO: companion ESP32-S3
+SuperMini over UART (TD-012; PCF8574 expander as documented fallback, TD-009). Pi: libgpiod +
+3.3 V relay board.
 
 **Q-011: How does a wiper output stop?**
 A: **Resolved (owner decision, 2026-11-19).** Wipers run a **fixed 45 s window** — the same span
@@ -236,7 +248,7 @@ A: **Resolved.** One Spanish-TTS WAV (16 kHz/16-bit/mono, ≤ 500 ms, silence-tr
 to the repo; both targets play it: XIAO streams it via I2S to a MAX98357A amp + speaker, the Pi
 plays it through a USB audio dongle. Trigger = wake acceptance; the 5 s command window starts at
 playback end (FR-019, NFR-010). Executed commands play the second fixed clip `assets/comando.wav`
-(≤ 300 ms, FR-023). No other spoken feedback in v1.
+(≤ 300 ms, FR-037). No other spoken feedback in v1.
 
 **Q-013: Which board is the companion ESP32?**
 A: **Resolved (owner-supplied).** **ESP32-S3 SuperMini** — enough GPIOs for 9 relays + UART with
@@ -247,9 +259,11 @@ avoided). No PSRAM, no audio hardware, and no SD card needed on the companion �
 
 ## Success Metrics
 
-- **Milestone 3 — "can act"**: both devices pass the two-stage interaction script end-to-end with correct
-  output behaviors, audio confirmations, and feedback timing (FR-001…FR-009, FR-017…FR-019,
-  FR-023, FR-024, NFR-010), and the WAV recorders produce valid clips on both devices (US-002, T16).
+- **Milestone 3 — "can act"**: Stage A — both devices emit contract events for the minimal model;
+  Stage B — the minimal set drives real channels through the companion stack; Stage C — every
+  rolled-out command is recognized and actuated (FR-001…FR-009, FR-017…FR-019, FR-037/FR-038,
+  NFR-010); audio confirmations meet the feedback timing budgets and the device-mic recording pass
+  produces valid clips on both devices (US-002, T28).
 
 ## Risks
 

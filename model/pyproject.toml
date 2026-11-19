@@ -1,0 +1,39 @@
+[project]
+name = "ultron-model"
+version = "0.1.0"
+description = "Ultron model package — PyTorch → TFLite pipeline"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "torch>=2.15.0",
+]
+
+[project.optional-dependencies]
+# T9 export chain (FR-010): ONNX -> onnx2tf -> TFLite. TensorFlow is a
+# build-time-only dependency (TD-002); install with `uv sync --extra export`.
+# (torch is a core dependency since T8.)
+export = [
+    "onnx>=1.15",
+    "onnxscript>=0.1",
+    "onnx2tf>=1.20",
+    "tensorflow>=2.16",
+    "tf-keras>=2.16",
+    # onnx2tf 1.28.x declares NO dependencies in its metadata — its real
+    # runtime imports are pinned here explicitly so `uv sync --extra export`
+    # yields a working converter out of the box.
+    "onnxruntime>=1.17",
+    "onnx-graphsurgeon>=0.3.27",
+    "sng4onnx>=1.0.4",
+    "psutil>=5.9",
+    "absl-py>=1.4",
+    "ai-edge-litert>=1.0",
+    "flatbuffers>=23.5",
+    "requests>=2.31",
+]
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["ultron_model"]

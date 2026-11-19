@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "language": "es",
+  "wake": { "id": "wake", "phrase": ["hey ultron"] },
+  "noise": { "id": "noise" },
+  "commands": [
+    { "id": "lm",  "sigla": "LM",  "phrase": ["luz media", "enciende luz media"],                       "behavior": "steady",             "channels": ["lm"] },
+    { "id": "lb",  "sigla": "LB",  "phrase": ["luz baja", "enciende luz baja"],                         "behavior": "steady",             "channels": ["lb"] },
+    { "id": "la",  "sigla": "LA",  "phrase": ["luz alta", "enciende luz alta"],                         "behavior": "steady",             "channels": ["la", "lb", "lm"] },
+    { "id": "gd",  "sigla": "GD",  "phrase": ["guiñador derecho", "enciende guiñador derecho"],         "behavior": "blink_45s",          "channels": ["gd"] },
+    { "id": "gi",  "sigla": "GI",  "phrase": ["guiñador izquierdo", "enciende guiñador izquierdo"],     "behavior": "blink_45s",          "channels": ["gi"] },
+    { "id": "p",   "sigla": "P",   "phrase": ["parqueo", "enciende parqueo"],                           "behavior": "blink_until_cancel", "channels": ["gd", "gi"] },
+    { "id": "cp",  "sigla": "CP",  "phrase": ["cancelar parqueo"],                                      "behavior": "cancel",             "channels": [] },
+    { "id": "lpb", "sigla": "LPB", "phrase": ["limpia parabrisas baja", "enciende limpia parabrisas baja"], "behavior": "motor",          "channels": ["lpb"] },
+    { "id": "lpa", "sigla": "LPA", "phrase": ["limpia parabrisas alta", "enciende limpia parabrisas alta"], "behavior": "motor",          "channels": ["lpa"] },
+    { "id": "a",   "sigla": "A",   "phrase": ["arranque", "enciende arranque"],                         "behavior": "pulse_2s",           "channels": ["a"] },
+    { "id": "cc",  "sigla": "CC",  "phrase": ["cierre centralizado", "enciende cierre centralizado"],   "behavior": "pulse_05s",          "channels": ["cc"] }
+  ],
+  "cap": { "actions": 10, "model_classes": 13 }
+}

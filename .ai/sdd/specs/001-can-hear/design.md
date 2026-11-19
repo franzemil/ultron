@@ -110,3 +110,66 @@ a 2 s window. Cost: 2× features per window, still trivially small.
 | Integration | CLI | `ultron dataset validate` exit codes on corrupt/valid fixtures (FR-021) |
 | Unit | Augmentation | same seed ⇒ byte-identical augmentation plan |
 | Unit | Synthetic | same seed ⇒ identical synthetic set; hold-out validator rejects `synthetic` |
+
+## Interactive recorder — `ultron record`
+
+**CLI** — new `record` Typer subcommand under the `ultron` app:
+
+```
+ultron record [--seconds 5] [--samples 20] [--device DEVICE] [--out-dir dataset/originals]
+```
+
+- Reads `model/registry.json` for the recordable code list.
+- Uses `rich` (`Confirm.ask`, `Prompt.ask`) for interactive code selection — no silent
+  fallback to device 0; fails fast listing capture devices when no mic is present.
+- Defaults: `--seconds 5`, `--samples 20` (matches NFR-005 ≥ 20 originals per variant).
+- For each selected code: record `--seconds` of audio → save as
+  `{label}_local_{nn:02d}.wav` → repeat until `--samples` files exist for that label.
+- Validates each selected code against `model/registry.json` (FR-026); rejects unknown codes.
+- Reuses the same 16 kHz / 16-bit / mono WAV writing as `devices/local/record.py` so host
+  recordings are byte-identical to the standalone script output.
+- Prints progress per attempt and a final summary; suggests `ultron dataset validate` after.
+
+**Files:**
+- `cli/src/ultron/record.py` — new `record` Typer subcommand module.
+- `tests/test_record_cli.py` — host-side tests (prompt stubbed, WAV output validated against
+  16 kHz / 16-bit / mono contract).
+
+**Verification:**
+- `uv run ultron record --help` exits 0.
+- `uv run pytest tests/test_record_cli.py` green.
+- Recorded WAVs pass `ultron dataset validate` (FR-021).
+
+
+## Long-take recording + pyannote split — `ultron record-long` / `ultron split` (T9)
+
+**CLI** — two new Typer subcommands under the `ultron` app:
+
+```
+ultron record-long --seconds 20 --label lb [--out-dir dataset/takes]
+ultron split dataset/takes/take_001_lb.wav --label lb [--hf-token TOKEN]
+```
+
+- `record-long`: records N seconds (default 20) of continuous 16 kHz/16-bit/mono audio from the host mic into `dataset/takes/take_<nn>_<label>.wav`. One label per take.
+- `split`: runs pyannote.audio Voice Activity Detection on the take, slices each speech segment into its own WAV, writes `{label}_local_<nn>.wav` under `dataset/originals/<label>/`.
+- `--label` validated against `model/registry.json` (FR-030).
+- Hugging Face token required for pyannote model download (`PYANNOTE_HF_TOKEN` env var or `--hf-token`) (FR-031).
+- VAD-only pipeline — no STT, no diarization, no on-device speech models (NFR-011).
+- Output WAVs are 16 kHz / 16-bit / mono; pass `ultron dataset validate` (FR-021).
+
+**Files:**
+- `cli/src/ultron/record_long.py` — `record-long` subcommand.
+- `cli/src/ultron/split.py` — `split` subcommand (pyannote VAD + slicing).
+- `tests/test_record_long.py`, `tests/test_split.py` — host-side tests (pyannote stubbed; fake segments).
+
+**Verification:**
+- `uv run ultron record-long --help` exits 0.
+- `uv run ultron split --help` exits 0.
+- `uv run pytest tests/test_split.py` green — fake pyannote segments produce valid 16k/16-bit/mono WAVs.
+- `--label` validation rejects unknown codes.
+- Missing HF token fails fast.
+
+**Pyannote notes:**
+- `pyannote.audio` requires `pip install pyannote.audio` and a Hugging Face account + token.
+- Model: `pyannote/voice-activity-detection`.
+- Heavy dependency (torch). Host dev machine only; not bundled in device firmware.

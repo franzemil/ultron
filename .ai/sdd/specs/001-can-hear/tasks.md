@@ -5,9 +5,10 @@
 | Requirement | Tasks |
 |---|---|
 | FR-016, FR-020, FR-021, FR-022 | T3 |
-| NFR-005 | T5, T5.1 |
+| NFR-005 | T4, T5, T5.1 |
 | NFR-006 | T2 |
 | NFR-007 (DSP clause) | T6 |
+| US-002 | T4 (on-device pass: spec 003 T28) |
 | US-008 | T3 |
 
 This spec **is** Milestone 1 (can hear) — see [.ai/sdd/PLAN.md](../../PLAN.md). Siblings: spec 002
@@ -18,7 +19,7 @@ spec 005 (Milestone 5 — Archived).
 
 - [x] `.status` reads `requirements:approved` ✅ (owner-approved)
 - [x] `.status` reads `design:approved` ✅ (owner-approved)
-- [ ] `.status` reads `tasks:approved` — **gates all implementation work** (currently `design:approved`)
+- [x] `.status` reads `tasks:approved` — **gates all implementation work** ✅ (owner-approved 2026-11-14)
 - [x] No open questions remain in requirements.md (Q-003/Q-007 resolved)
 
 Implementation must be executed in dependency order; each task is verified by its own acceptance
@@ -38,16 +39,21 @@ criteria before the next begins.
 
 ### T2 — uv workspace + CLI skeleton (2 h)
 - Covers: NFR-006. Deps: T1. Priority: Must.
-- Checklist: root `pyproject.toml` (uv workspace, members `cli/` + `model/`), `cli/pyproject.toml`
-  (package `ultron`, Typer), `model/pyproject.toml` (package `ultron-model`, workspace dependency
-  of cli), config loader (`.env`, EI key), logging setup, `ultron --help` works, pytest scaffold.
+- Checklist:
+  - [x] root `pyproject.toml` (uv workspace, members `cli/` + `model/`)
+  - [x] `cli/pyproject.toml` (package `ultron`, Typer)
+  - [x] `model/pyproject.toml` (package `ultron-model`, workspace dependency of cli)
+  - [x] config loader (`.env`, EI key)
+  - [x] logging setup
+  - [x] `ultron --help` works
+  - [x] pytest scaffold
 - Likely files: `pyproject.toml`, `cli/pyproject.toml`, `model/pyproject.toml`,
   `cli/src/ultron/cli.py`, `tests/test_cli.py`.
 - Verify: `uv sync && uv run ultron --help` exits 0; `uv run pytest` green.
 
 ### T3 — Dataset tooling + registry (3 h)
 - Covers: FR-013 (schema support), FR-016, FR-020, FR-021, FR-022. Deps: T2. Priority: Must.
-- Checklist: `dataset ingest` (copy/label WAVs from ANY source — device recordings **and**
+- [x] Checklist: `dataset ingest` (copy/label WAVs from ANY source — device recordings **and**
   owner-supplied external recordings; mic source tagged in the filename, `lm_xiao_01.wav` /
   `lm_ext_01.wav`), `dataset validate` (16k/16-bit/mono checks, exit codes per file),
   `dataset dcfix`, `registry.json` schema + validator, label slugs.
@@ -55,10 +61,21 @@ criteria before the next begins.
 - Verify: `uv run ultron dataset validate` fails loudly on a corrupt fixture and passes a valid
   one.
 
+### T4 — Recorders for both devices (4 h) ✅
+- Covers: US-002, NFR-005. Deps: T2. Priority: Must.
+- [x] Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
+  Pi recorder script (`devices/orangepi/record.py`, sounddevice, 16 k/16-bit/mono, label arg);
+  docs.
+- Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
+  `docs/recording.md`.
+- Verify: XIAO records a 5 s WAV to SD (DONE response); Pi recorder writes a valid WAV
+  (`ultron dataset validate` passes it). **Deferred (D-012):** this on-device verify is optional
+  and moved to spec 003 T28 (US-002 recording pass) — not required for the Milestone 1 gate.
+
 ### T5 — Seeded augmentation (2 h)
 - Covers: NFR-005. Deps: T3. Priority: Must.
-- Checklist: 4 ffmpeg variants per original (gain 0.7–1.3, tempo 0.92–1.08, pitch ±6%,
-  background mix, occasional echo) — lampara-aliz recipe, seeded; deterministic filenames.
+- [x] Checklist: 4 ffmpeg variants per original (gain 0.7–1.3, tempo 0.92–1.08, pitch ±6%,
+  background mix, occasional echo) — lampara-aliz recipe, seeded; deterministic filenames. ✅
 - Likely files: `cli/src/ultron/augment.py`, `tests/test_augment.py`.
 - Verify: same seed ⇒ byte-identical plan; `augment plan` lists targets before writing.
 
@@ -71,8 +88,11 @@ criteria before the next begins.
 - Policy (lampara-aliz lesson): synthetic clips are tagged `synthetic`, NEVER enter the fresh
   hold-out, never count toward NFR-005 original minimums, and are used in training only via
   `--with-synthetic` (default **off** — owner decides per run); every use is a changelog event.
-- Checklist: `synth tts` (multi-voice, seeded), `synth noise`, synthetic tagging in the dataset
-  layout, dry-run plan before writing.
+- Checklist:
+  - [x] `synth tts` (multi-voice, seeded)
+  - [x] `synth noise`
+  - [x] Synthetic tagging in the dataset layout
+  - [x] Dry-run plan before writing
 - Likely files: `cli/src/ultron/synth.py`, `tests/test_synth.py`, `docs/recording.md`.
 - Verify: same seed ⇒ identical synthetic set; hold-out validator rejects `synthetic` clips;
   `synth tts --dry-run` lists targets without writing.
@@ -88,3 +108,32 @@ criteria before the next begins.
 
 Every task maps to requirements in the coverage table; any FR without a task is a spec gap —
 stop and update the spec (never silently implement).
+
+### T8 — Interactive recorder CLI `ultron record` (3 h)
+- Covers: FR-023, FR-024, FR-025, FR-026; US-002. Deps: T4. Priority: Must.
+- Checklist: `cli/src/ultron/record.py` — new `record` Typer subcommand; rich-based
+  interactive code selection from `model/registry.json`; record `--seconds` per attempt
+  until `--samples` examples per code; write `{label}_local_{nn:02d}.wav` (mic tag local);
+  validate codes against registry; host-side tests.
+- Likely files: `cli/src/ultron/record.py`, `tests/test_record_cli.py`.
+- Verify: `uv run ultron record --help` exits 0; `uv run pytest tests/test_record_cli.py`
+  green; recorded WAVs pass `ultron dataset validate`.
+
+### T9 — Long-take recording + pyannote VAD split (3 h)
+- Covers: FR-027, FR-028, FR-029, FR-030, FR-031, NFR-011; US-002. Deps: T4. Priority: Should.
+- Checklist: `cli/src/ultron/record_long.py` — record-long subcommand (20 s continuous take, one label); `cli/src/ultron/split.py` — split subcommand using pyannote.audio VAD; slice segments into `{label}_local_<nn>.wav`; validate `--label` against registry; HF token handling; host-side tests with stubbed pyannote.
+- Likely files: `cli/src/ultron/record_long.py`, `cli/src/ultron/split.py`, `tests/test_record_long.py`, `tests/test_split.py`.
+- Verify: `uv run ultron record-long --help` exits 0; `uv run ultron split --help` exits 0; `uv run pytest tests/test_split.py` green; missing HF token fails fast; `--label` rejects unknown codes.
+
+### T7 — Hardware validation pass, XIAO + Pi (optional — deferred; moved to spec 003 T28)
+- Covers: US-002 AC1/AC2 on-device pass (D-012). Deps: T2–T6 (all merged). Priority: **Optional —
+  deferred**; does **not** gate the Milestone 1 exit. The owner moved this pass to spec 003 as
+  T28 (2026-11-19); it is kept here for history.
+- Run whenever a hardware session is convenient: flash `wav_recorder` on the XIAO; `rec {label}` →
+  5 s WAV on SD (DONE response); Pi `record.py` capture; `dataset ingest` + `ultron dataset
+  validate` on device recordings; MFCC parity on real WAVs; tick the deferred verify boxes in the
+  closed task issues.
+- Tracking: [issue #10](https://github.com/franzemil/ultron/issues/10) · draft PR #17 · branch
+  `franzemil/t7_hw_validation` (parked).
+- Verify: device-recorded WAVs pass `ultron dataset validate`; parity test green on features from
+  real recordings.

@@ -1,0 +1,27 @@
+[project]
+name = "ultron-workspace"
+version = "0.1.0"
+description = "Ultron workspace root (cli + model packages)"
+requires-python = ">=3.11"
+dependencies = ["ultron", "ultron-model"]
+
+[project.optional-dependencies]
+# Heavy export chain (T9) — opt-in so the default dev sync stays light:
+#   uv sync --extra export
+export = ["ultron-model[export]"]
+
+[workspace]
+members = ["cli", "model"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+sources = { ultron = { path = "./cli", editable = true }, ultron-model = { path = "./model", editable = true } }
+
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

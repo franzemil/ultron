@@ -11,7 +11,8 @@
 Milestone 4 measures, honestly and repeatably, which candidate device ships: latency, memory, false
 accepts, per-command accuracy (including the known close pairs), output timing, and feedback
 timing — all parsed from device logs, no manual transcription. The result is a completed
-`docs/bench.md` table and a justified device decision.
+`docs/bench.md` table and a justified device decision. The bench runs **after** spec 003
+Stage C completes (full phrase set rolled out) — devices are compared, not model sizes.
 
 ## Goals
 
@@ -34,7 +35,7 @@ timing — all parsed from device logs, no manual transcription. The result is a
 
 **Acceptance criteria:**
 - **AC1:** `docs/bench.md` contains latency, memory, false-accepts, and per-command confusion
-  for both devices on the same test protocol.
+  across the full rolled-out phrase set for both devices on the same test protocol.
 - **AC2:** The winner is declared in `docs/bench.md` with the numbers that justify it.
 
 ## Functional Requirements (EARS, MoSCoW)
