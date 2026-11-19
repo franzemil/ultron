@@ -139,6 +139,23 @@ def write_archive(
 
 
 def run_train(archive: Path, dataset_root: Path, *extra: str):
+    """`ultron train run` with every output redirected under ``tmp_path``.
+
+    The CLI defaults write ``build/checkpoint.pt`` (+ report, hold-out report)
+    into the working tree; a test must never leave artifacts there, so any
+    output flag the caller did not pass explicitly is pinned next to the
+    archive instead.
+    """
+    provided = set(extra)
+    outputs = [
+        ("--out-checkpoint", "checkpoint.pt"),
+        ("--out-report", "train_report.json"),
+        ("--out-holdout-md", "holdout_report.md"),
+    ]
+    defaults: list[str] = []
+    for flag, name in outputs:
+        if flag not in provided:
+            defaults += [flag, str(archive.parent / name)]
     return runner.invoke(
         app,
         [
@@ -146,6 +163,7 @@ def run_train(archive: Path, dataset_root: Path, *extra: str):
             "--archive", str(archive),
             "--holdout", str(dataset_root),
             "--registry", str(REGISTRY),
+            *defaults,
             *extra,
         ],
     )
@@ -471,3 +489,28 @@ def test_train_rejects_corrupt_archive(tmp_path: Path) -> None:
     )
     with pytest.raises(t8.TrainError, match=r"\(N, 100, 13\)"):
         t8.load_archive(wrong)
+
+
+def test_pool_stats_is_int8_safe():
+    """Centred mean + MAD spread: no cancellation, no sqrt, large offsets ignored.
+
+    `E[x²] − E[x]²` cancels catastrophically under int8 quantization, and `sqrt`
+    amplifies near-zero error — both broke the export parity gate. The spread is
+    therefore mean absolute deviation of the centred activations.
+    """
+    import torch
+    from ultron_model.model import pool_stats
+
+    torch.manual_seed(0)
+    z = torch.rand(8, 5, 40) + 100.0  # large common offset, small real spread
+    mean, spread = pool_stats(z)
+
+    assert torch.allclose(mean, z.mean(dim=-1), atol=1e-4)
+    assert torch.allclose(spread, (z - z.mean(dim=-1, keepdim=True)).abs().mean(dim=-1), atol=1e-5)
+    assert float(spread.max()) < 1.0  # the offset did not leak into the spread
+    assert float(spread.min()) >= 0.0
+
+    # a constant signal has exactly zero spread
+    const = torch.full((2, 4, 10), 7.0)
+    _, spread_c = pool_stats(const)
+    assert torch.allclose(spread_c, torch.zeros_like(spread_c), atol=1e-6)

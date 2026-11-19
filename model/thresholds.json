@@ -1,15 +1,15 @@
 {
-  "wake": 0.8,
-  "margin_wake": 0.1,
   "commands": {
     "la": {
-      "threshold": 0.8,
-      "margin": 0.1
+      "margin": 0.2,
+      "threshold": 0.95
     },
     "lb": {
-      "threshold": 0.8,
-      "margin": 0.1
+      "margin": 0.2,
+      "threshold": 0.95
     }
   },
+  "margin_wake": 0.2,
+  "wake": 0.95,
   "window_s": 5.0
 }

@@ -28,3 +28,7 @@ a benchmark decides which one ships. **Source of truth is this repo — Edge Imp
 4. Destructive dataset/EI operations require a printed target list and explicit user confirmation.
 5. Both targets must run the **identical model flatbuffer** and identical event semantics — any
    divergence between XIAO and Pi behavior is a bug.
+6. **Language: English for everything written** — source, comments, docstrings, CLI output, error
+   messages, specs, docs, commit messages, PR bodies. The only Spanish is the spoken phrase data
+   in `model/registry.json` (`"language": "es"`) and transcripts quoting what a person says; code
+   identifiers stay ASCII slugs (`lb`, `la`). Full rule: `.ai/steering/conventions.md#language`.

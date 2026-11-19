@@ -8,6 +8,7 @@ logic and determinism are still verified via a dry-run path.
 from __future__ import annotations
 
 import hashlib
+import shutil
 import os
 import subprocess
 from pathlib import Path
@@ -74,17 +75,17 @@ def test_plan_is_deterministic(originals_dir: Path, monkeypatch: pytest.MonkeyPa
     assert _plan_hash(t1) != _plan_hash(t3)
 
 
-def test_four_variants_per_original(originals_dir: Path) -> None:
-    """Exactly 4 variants per original file."""
+def test_five_variants_per_original(originals_dir: Path) -> None:
+    """Exactly 5 variants per original file (A-002 added `shift`)."""
     root = originals_dir.parent
     targets = plan_augmentations(seed=42, dataset_root=root)
-    # 2 labels x 2 originals x 4 variants = 16
-    assert len(targets) == 16
+    # 2 labels x 2 originals x 5 variants = 20
+    assert len(targets) == 20
     by_variant = {}
     for t in targets:
         by_variant.setdefault(t.variant, 0)
         by_variant[t.variant] += 1
-    assert by_variant == {"gain": 4, "tempo": 4, "pitch": 4, "mix": 4}
+    assert by_variant == {"gain": 4, "tempo": 4, "pitch": 4, "mix": 4, "shift": 4}
 
 
 def test_deterministic_filenames(originals_dir: Path) -> None:
@@ -144,5 +145,83 @@ def test_ffmpeg_run_writes_variants(originals_dir: Path, tmp_path: Path) -> None
     targets = plan_augmentations(seed=42, dataset_root=root)
     msgs = run_plan(targets, dry_run=False)
     written = list((root / "augmented").rglob("*.wav"))
-    assert len(written) == 16, f"expected 16 written, got {len(written)}: {msgs}"
+    assert len(written) == 20, f"expected 20 written, got {len(written)}: {msgs}"
     assert all("[ok]" in m for m in msgs), msgs
+
+
+# ── A-002: shift + real mix ─────────────────────────────────────────────────
+
+
+def test_shift_always_emits_the_analysis_window(originals_dir: Path) -> None:
+    """Short clips get delayed into the 2.0 s window, then padded to it."""
+    root = originals_dir.parent
+    shift = [t for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "shift"]
+    assert shift, "no shift targets planned"
+    for t in shift:
+        filt = " ".join(t.ffmpeg_args)
+        assert "apad" in filt and "atrim=0:2" in filt
+        assert "adelay=" in filt
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_shift_output_is_exactly_two_seconds(originals_dir: Path, tmp_path: Path) -> None:
+    import wave
+
+    root = originals_dir.parent
+    targets = [t for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "shift"]
+    msgs = run_plan(targets, dry_run=False)
+    assert all("[ok]" in m for m in msgs), msgs
+    for t in targets:
+        with wave.open(str(t.output)) as w:
+            assert w.getframerate() == 16000 and w.getnchannels() == 1
+            assert abs(w.getnframes() / 16000 - 2.0) < 0.05, t.output
+
+
+def test_shift_is_seeded(originals_dir: Path) -> None:
+    root = originals_dir.parent
+    a = [t.ffmpeg_args for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "shift"]
+    b = [t.ffmpeg_args for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "shift"]
+    c = [t.ffmpeg_args for t in plan_augmentations(seed=7, dataset_root=root) if t.variant == "shift"]
+    assert a == b
+    assert a != c
+
+
+def test_mix_uses_a_real_noise_clip_when_available(tmp_path: Path) -> None:
+    """`mix` must actually mix noise now (it used to be an echo/volume no-op)."""
+    root = tmp_path / "dataset"
+    _write_wav(root / "originals" / "la" / "la_00.wav")
+    _write_wav(root / "originals" / "noise" / "noise_00.wav", seconds=1.0)
+
+    mixes = [t for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "mix"]
+    assert len(mixes) == 2  # one per original (la + noise)
+    for t in mixes:
+        args = t.ffmpeg_args
+        assert "-stream_loop" in args  # noise loops under the speech
+        assert any("noise_00.wav" in a for a in args)
+        assert "-filter_complex" in args and "amix=inputs=2" in " ".join(args)
+
+
+def test_mix_falls_back_when_the_dataset_has_no_noise(tmp_path: Path) -> None:
+    root = tmp_path / "dataset"
+    _write_wav(root / "originals" / "la" / "la_00.wav")
+
+    mixes = [t for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "mix"]
+    assert len(mixes) == 1
+    assert "-stream_loop" not in mixes[0].ffmpeg_args
+    assert "volume=1.0" in " ".join(mixes[0].ffmpeg_args)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_mix_output_is_16k_mono(tmp_path: Path) -> None:
+    import wave
+
+    root = tmp_path / "dataset"
+    _write_wav(root / "originals" / "la" / "la_00.wav")
+    _write_wav(root / "originals" / "noise" / "noise_00.wav", seconds=1.0)
+
+    targets = [t for t in plan_augmentations(seed=42, dataset_root=root) if t.variant == "mix"]
+    msgs = run_plan(targets, dry_run=False)
+    assert all("[ok]" in m for m in msgs), msgs
+    for t in targets:
+        with wave.open(str(t.output)) as w:
+            assert (w.getframerate(), w.getnchannels()) == (16000, 1)

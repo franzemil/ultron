@@ -25,7 +25,7 @@ from typer.models import OptionInfo
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 
-from ultron.dataset import REGISTRY_IDS
+from ultron.dataset import REGISTRY_IDS, check_dataset_root
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -151,7 +151,7 @@ def split_command(
     take: str = typer.Argument(..., help="Path to take WAV (from ultron record-long)."),
     label: str = typer.Argument(..., help="Label slug (registry id, e.g. lb, wake, noise)."),
     out_dir: str = typer.Option(
-        "dataset/originals", "--out-dir", "-o", help="Dataset output directory.",
+        "dataset", "--out-dir", "-o", help="Dataset root directory (default dataset/).",
     ),
     min_speech_ms: int = typer.Option(
         250, "--min-speech-ms", help="Minimum speech segment length in milliseconds."
@@ -163,6 +163,7 @@ def split_command(
     """Split a take into per-utterance WAVs labeled by --label (Silero VAD)."""
     min_speech_ms = _opt(min_speech_ms, 250)
     min_silence_ms = _opt(min_silence_ms, 300)
+    out_dir = _opt(out_dir, "dataset")
     registry = _registry()
     _validate_label(label, registry)
 
@@ -170,6 +171,13 @@ def split_command(
     if not take_path.is_file():
         console.print(f"[red]Take not found: {take}[/red]")
         raise typer.Exit(code=2)
+
+    try:
+        out_root = check_dataset_root(out_dir)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2)
+    label_dir = out_root / "originals" / label
 
     samples = _read_wav(take_path)
 
@@ -199,7 +207,6 @@ def split_command(
         raise typer.Exit(code=1)
 
     out_root = Path(out_dir)
-    label_dir = out_root / "originals" / label
     label_dir.mkdir(parents=True, exist_ok=True)
 
     nn = _next_nn(label_dir, label, "local")

@@ -37,11 +37,23 @@ Python packaging is a **uv workspace**: the root `pyproject.toml` declares membe
 - CLI verbs follow lampara-aliz style: `ultron <group> <action>` (e.g. `dataset dcfix`,
   `train run`, `export tflite`, `ei sync`).
 
+## Language
+
+- **Everything written is English**: source, comments, docstrings, CLI output and error messages,
+  specs, design/task notes, commit messages, PR bodies, docs, and agent transcripts.
+- **Spanish is data, not prose**: the only permitted Spanish is the spoken command phrase itself —
+  `model/registry.json` phrases (`"language": "es"`), the label glosses that quote them, and the
+  demo/bench transcripts that show what a person actually says. Code identifiers stay ASCII slugs
+  (`lb`, `la`), never the Spanish word.
+- Anything else is a bug in the same class as a wrong unit: mixed-language prose in a spec or a
+  translated CLI string makes the artifacts unsearchable and unquotable.
+
 ## Data hygiene
 
 - Audio is always **16 kHz / 16-bit / mono** WAV, 1–6 s.
 - All utterances are **Spanish** (registry `language: "es"`) — prompts are spoken naturally as
-  the owner would say them in the car, not read robotically.
+  the owner would say them in the car, not read robotically. This is the single Spanish exception
+  described under [Language](#language): the phrase is Spanish, everything about it is English.
 - `dataset dcfix` (DC-offset removal) runs before feature extraction; NaN features fail loudly
   instead of silently training on garbage (lampara lesson: NaN → DSP error −5).
 - Splitting is **stratified and seeded**: `rng(42)` everywhere. Same seed ⇒ identical splits,
@@ -49,6 +61,8 @@ Python packaging is a **uv workspace**: the root `pyproject.toml` declares membe
 - A **fresh hold-out** set (recorded after training data, never augmented into training) is the
   only accuracy number we report publicly. Val-split accuracy is memorization + augmentation
   coverage and is labeled as such.
+  *(Amended by [A-001](../sdd/amendments/A-001-three-way-split.md): once the threshold sweep reads
+  a set, that set is **validate**, not hold-out; only an untouched **test** set may be quoted.)*
 - **Synthetic data policy**: TTS/noise-generated clips are opt-in for training
   (`--with-synthetic`, default off), never enter hold-out, never count toward NFR-005 original
   minimums; every use is a changelog event.
