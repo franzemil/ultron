@@ -43,8 +43,11 @@ at boot and is reported in the `DBG mem` line.
 argmax, its confidence and the inference latency:
 
 ```
-DBG pred=noise conf=0.7712 state=WAKE_LISTEN t_ms=6543 infer_ms=41
+DBG pred=noise conf=0.7712 state=WAKE_LISTEN t_ms=6543 infer_ms=41 win_ms=118
 ```
+
+`infer_ms` is the TFLM `Invoke()` alone; `win_ms` is the whole NFR-001 window budget
+(MFCC + DC correction + quantization + inference). NFR-001's ≤ 400 ms applies to `win_ms`.
 
 `EVT` lines are the contract — actuators and the spec-004 bench parse only those. Error codes
 currently emitted: `MIC_INIT_FAILED`, `MIC_READ_FAILED`, `MFCC_INIT_FAILED`,

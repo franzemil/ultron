@@ -148,6 +148,7 @@ void memoryLine() {
 
 void classifyWindow() {
   const uint32_t now = millis();
+  const uint32_t win_t0 = now; /* NFR-001 window budget: features + inference */
   if (!g_features.buildWindowInt8(g_model.input_scale, g_model.input_zero_point, g_input)) {
     return; /* ring not full yet (first 2 s after boot) */
   }
@@ -162,13 +163,17 @@ void classifyWindow() {
   }
 
   const uint32_t infer_ms = ultron::infer_lastLatencyUs() / 1000u;
+  const uint32_t win_ms = millis() - win_t0;
 
-  /* NFR-008 / NFR-001: one prediction line per window, latency included. */
-  char buf[128];
+  /* NFR-008 / NFR-001: one prediction line per window, with both latency
+   * numbers — `infer_ms` is the TFLM invocation alone, `win_ms` is the whole
+   * NFR-001 window budget (MFCC + quantization + inference). */
+  char buf[160];
   size_t n = ultron_sm_format_pred(&g_sm, g_scores, ultron_sm_state_name(g_sm.state), now, buf,
                                    sizeof(buf));
   if (n > 0 && n < sizeof(buf)) {
-    snprintf(buf + n, sizeof(buf) - n, " infer_ms=%lu", (unsigned long)infer_ms);
+    snprintf(buf + n, sizeof(buf) - n, " infer_ms=%lu win_ms=%lu",
+             (unsigned long)infer_ms, (unsigned long)win_ms);
     emitLine(buf);
   }
 
