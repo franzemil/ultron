@@ -74,8 +74,11 @@ float g_selftest_scores[ULTRON_NUM_CLASSES];
 /* ── serial sink ─────────────────────────────────────────────────────────── */
 
 void emitLine(const char *line) {
+  /* No Serial.flush(): on this core HWCDC::flush() spins for up to
+   * tx_timeout_ms (default 100 ms) while the TX ring drains, which would sit in
+   * the audio loop and eat into the 500 ms hop. The TX ring preserves ordering,
+   * so the host still sees every line — in order. */
   Serial.println(line);
-  Serial.flush(); /* contract lines must reach the host before the next window */
 }
 
 /* Target Event Contract sink (design.md → "Event contract"). */

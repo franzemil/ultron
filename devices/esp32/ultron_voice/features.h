@@ -37,7 +37,10 @@ class FeatureExtractor {
 
   void end();
 
-  /* Append captured samples. `hopReady()` becomes true once per 500 ms. */
+  /* Append captured samples. `hopReady()` becomes true once per 500 ms hop.
+   * The flag is a level, not a queue: if the loop ever stalls for more than one
+   * hop the extra hops coalesce into a single classified window (the ring still
+   * holds the newest 2 s, so no audio is analysed twice). */
   void push(const int16_t *samples, size_t n);
 
   bool hopReady() const { return hop_ready_; }
