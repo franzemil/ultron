@@ -9,7 +9,7 @@
 |---|---|---|---|
 | [001](specs/001-can-hear/requirements.md) | Can Hear — CLI, dataset tooling, recorder utilities, MFCC parity | Milestone 1 — Can hear | `tasks:approved` |
 | [002](specs/002-can-think/requirements.md) | Can Think — features, subset training (la+lb), host TFLite test, export + parity gate | Milestone 2 — Can think | `tasks:approved` |
-| [003](specs/003-can-act/requirements.md) | Can Act — XIAO only: staged console → audio → 2 direct relays | Milestone 3 — Can act | `requirements:draft` |
+| [003](specs/003-can-act/requirements.md) | Can Act — XIAO only: staged console → audio → 2 direct relays | Milestone 3 — Can act | `tasks:approved` |
 | [006](specs/006-can-act-full/requirements.md) | Can Act Full — companion SuperMini 9 relays + command rollout (stub) | Milestone 6 — Can act full | `requirements:draft` |
 | [004](specs/004-can-decide/requirements.md) | Can Decide — XIAO benchmark (Pi comparison deferred to 005) | Milestone 4 — Can decide | `requirements:draft` |
 | [005](specs/005-archived/requirements.md) | **Final phase** — Pi runtime + parity, EI sync, docs + release | Milestone 5 — Pi + archived | `requirements:draft` |

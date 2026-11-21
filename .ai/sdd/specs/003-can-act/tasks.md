@@ -38,9 +38,9 @@ spec 006's rollout cycles.
 
 ## Implementation readiness check
 
-- [ ] `.status` reads `requirements:approved` (currently `requirements:draft`)
-- [ ] `.status` reads `design:approved`
-- [ ] `.status` reads `tasks:approved` — **gates all implementation work**
+- [x] `.status` reads `requirements:approved` ✅ (owner-approved 2026-11-21)
+- [x] `.status` reads `design:approved` ✅ (owner-approved 2026-11-21)
+- [x] `.status` reads `tasks:approved` ✅ (owner-approved 2026-11-21) — **gates all implementation work**
 - [x] **Q-011 resolved (fixed-time wipers, owner decision 2026-11-19)**
 - [x] **Q-014 resolved (amp on VBUS 5 V, owner decision 2026-11-21)**
 - [ ] Specs 001/002 delivered: MFCC library, `model_int8.tflite`, `labels.json`, thresholds
