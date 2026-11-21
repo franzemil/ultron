@@ -253,9 +253,16 @@ int mfcc_compute(const mfcc_ctx_t *ctx, const int16_t *frame, float *coeffs)
         ctx->spectrum[k] = re * re + im * im;
     }
 
-    /* 3. Mel filterbank energies into a dedicated buffer. */
-    float *energies = (float *)malloc((size_t)nfilt * sizeof(float));
-    if (!energies) {
+    /* 3. Mel filterbank energies into a stack buffer.
+     *
+     * Firmware constraint (spec 003 T12): no dynamic allocation on the
+     * inference path. This used to malloc()/free() one 40-float buffer per
+     * frame — i.e. 100 allocations per classified window, from the audio loop.
+     * 40 floats = 160 B, so a stack array is both smaller and deterministic;
+     * the arithmetic below is unchanged, and the host/Pi builds see byte-identical
+     * coefficients (tests/test_dsp_parity.py pins that). */
+    float energies[MFCC_NUM_FILTERS];
+    if (nfilt > MFCC_NUM_FILTERS) {
         return -1;
     }
     for (int m = 0; m < nfilt; m++) {
@@ -280,8 +287,6 @@ int mfcc_compute(const mfcc_ctx_t *ctx, const int16_t *frame, float *coeffs)
         }
         coeffs[k] = acc;
     }
-
-    free(energies);
 
     return 0;
 }
