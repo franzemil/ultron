@@ -8,23 +8,25 @@
 
 ## Overview
 
-Milestone 4 measures, honestly and repeatably, which candidate device ships: latency, memory, false
-accepts, per-command accuracy (including the known close pairs), output timing, and feedback
-timing — all parsed from device logs, no manual transcription. The result is a completed
-`docs/bench.md` table and a justified device decision. The bench runs **after** spec 003
-Stage C completes (full phrase set rolled out) — devices are compared, not model sizes.
+Milestone 4 measures, honestly and repeatably, the XIAO stack: latency, memory, false accepts,
+per-command accuracy (including the known close pairs), output timing, and feedback timing — all
+parsed from device logs, no manual transcription. The result is a completed `docs/bench.md` table
+on the XIAO. **Owner decision 2026-11-21:** the Orange Pi runtime arrives in spec 005 (final
+phase), so the cross-target comparison is deferred to spec 005's parity pass (T30); this
+milestone validates the shipping XIAO stack after spec 006's full rollout.
 
 ## Goals
 
-1. One command (`ultron bench run --device xiao|pi`) produces the metrics row for a device.
-2. Both devices are measured on the same scripted protocol — devices are compared, not models.
-3. The winner is declared in `docs/bench.md` with the numbers that justify it.
+1. One command (`ultron bench run --device xiao`) produces the metrics row for the XIAO stack.
+2. The XIAO is measured on a scripted protocol; the Pi comparison is deferred to spec 005 (T30).
+3. The result is declared in `docs/bench.md` with the numbers that justify it.
 
 ## Non-Goals
 
-- No new device behavior here (spec 003 owns the runtime); the bench only observes it.
+- No new device behavior here (spec 003/006 owns the runtime); the bench only observes it.
 - No training changes (specs 001–002) — the same model artifacts are used on both devices.
 - No EI upload (spec 005).
+- No Pi measurement or device-vs-device decision (spec 005, final phase — T30 parity).
 
 ## User Stories
 

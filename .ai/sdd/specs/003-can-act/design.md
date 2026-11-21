@@ -2,17 +2,15 @@
 
 ## Executive summary
 
-Both targets run the same component graph — capture → shared C MFCC (spec 001) → TFLite
+The XIAO ESP32S3 runs Arduino/ESP32 C++ firmware: capture → shared C MFCC (spec 001) → TFLite
 interpreter (artifacts from spec 002) → a three-state machine (`WAKE_LISTEN`, `CONFIRMING`,
-`LISTENING`) → event sink + feedback player (wake "Escuchando" + command "comando" clips) →
-output controller with 9 relay channels. The box implementations differ by design: the XIAO runs
-Arduino/ESP32 C++ firmware and delegates the output controller to a **companion ESP32-S3
-SuperMini** over UART (FR-038) — its pins are reserved for mic + speaker; the Pi runs Python
-(`tflite_runtime` + `sounddevice` + libgpiod) with the controller in-process. Bring-up is staged:
-console-only (T12) → audio (T14) + 2 direct relays (T15 scaffolding) → full companion stack
-(T15). Deployment is staged (PLAN.md rollout phases): Stage A ships the minimal 4-class model
-(`wake`, `noise`, `la`, `lb`) with events + feedback only, Stage B adds relay actuation for that
-set, Stage C rolls out one command per cycle. Identical semantics are an AGENTS rule 5 invariant.
+`LISTENING`) → event sink (USB serial) + feedback player (wake "Escuchando" + command "comando"
+clips) → **2 relay channels driven directly from XIAO pins** (LM, LB — the minimal model's
+commands are `la`, `lb`). Bring-up is staged: console-only (T12) → audio feedback + 2 direct
+relays (T14, T15). **Scope decisions (owner, 2026-11-21):** the companion ESP32-S3 SuperMini
+9-channel stack (FR-038, TD-012) and the per-command rollout live in spec 006-can-act-full; the
+Orange Pi runtime (TD-005) and cross-target parity live in spec 005 (final phase). Identical
+event semantics remain the contract — AGENTS rule 5 invariant.
 
 ## Requirements mapping
 
@@ -22,9 +20,9 @@ set, Stage C rolls out one command per cycle. Identical semantics are an AGENTS 
 | FR-003, FR-015 | [State machine](#state-machine) (thresholds from spec 002) |
 | FR-007 | [Architecture](#architecture) (on-device only) |
 | FR-008 | [Event contract](#event-contract) |
-| FR-009, FR-017, NFR-009 | [Output controller](#output-controller) |
+| FR-009, FR-017, NFR-009 | [Output controller](#output-controller) (2 direct channels; spec 006: 9-channel stack) |
 | FR-018, FR-019, FR-037, NFR-010 | [Audio feedback](#audio-feedback), [State machine](#state-machine) |
-| FR-038 | [Output controller](#output-controller) (companion ESP32-S3 SuperMini), [Wiring](#wiring-xiao-stack) |
+| FR-038 | *(moved to spec 006-can-act-full — companion stack deferred, owner 2026-11-21)* |
 | NFR-001, NFR-002 | TD-004/TD-006, [Memory budget](#memory-budget) |
 | NFR-008 | [Observability](#observability) |
 
@@ -36,14 +34,11 @@ flowchart TB
     CAP --> DSP["MFCC — shared C dsp/mfcc (spec 001)<br/>features 100 x 13"]
     DSP --> TFL["TFLite interpreter<br/>same .tflite on both targets (spec 002)<br/>scores: noise, wake, trained command set<br/>(initial: la, lb — full registry after Stage C)"]
     TFL --> SM["state machine<br/>WAKE_LISTEN, CONFIRMING, LISTENING"]
-    SM --> EVT["event sink<br/>XIAO: serial lines (USB to host + UART to companion)<br/>Pi: JSON lines"]
+    SM --> EVT["event sink<br/>XIAO: serial lines (USB to host)"]
     SM --> FB["feedback player<br/>Escuchando (wake) + comando (command)<br/>fixed clips from flash"]
-    FB --> SPK["speaker<br/>XIAO: I2S MAX98357A / Pi: USB dongle"]
-    EVT --> UART["XIAO: UART TX 115200-8N1<br/>same EVT lines (FR-038)"]
-    UART --> COMP["companion ESP32-S3 SuperMini<br/>output controller firmware"]
-    COMP --> REL["9 relay channels: LM LB LA GD GI LPB LPA A CC"]
-    EVT --> PIOC["Pi: output controller in-process<br/>libgpiod"]
-    PIOC --> REL
+    FB --> SPK["speaker<br/>I2S MAX98357A"]
+    EVT --> OC["output controller (direct on XIAO)<br/>2 relay channels: LM, LB"]
+    OC --> CAR["relay channels (spec 006: 9-channel companion stack)"]
 ```
 
 ### State machine
@@ -101,8 +96,8 @@ any target.
 
 | Target | Output path | Playback |
 |---|---|---|
-| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on D2/D3/D4 (GPIO3/4/5) — **validated on hardware 2026-11-20**; SD pins free at runtime (relays live on the companion, FR-038) | both clips streamed from flash via I2S |
-| Pi | USB audio dongle → powered speaker (default ALSA device) | same clips via `sounddevice` output stream |
+| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on D2/D3/D4 (GPIO3/4/5) — **validated on hardware 2026-11-20**; amp VIN on 5 V VBUS (Q-014 resolved) | both clips streamed from flash via I2S |
+| Pi (spec 005) | USB audio dongle → powered speaker (default ALSA device) | same clips via `sounddevice` output stream |
 
 Flash cost on XIAO: ~16 KB ("Escuchando", 500 ms) + ~10 KB ("comando", 300 ms) of 16 kHz int16
 mono — fits NFR-002 alongside the model.
@@ -124,16 +119,17 @@ lines.
 
 ## Output controller
 
-Consumes `CMD` events and drives **9 relay channels** (`lm lb la gd gi lpb lpa a cc`) per the
-Actuation Behavior Contract (requirements). Same behavior-engine semantics everywhere
-(AGENTS rule 5) — only the location and GPIO layer differ:
+Consumes `CMD` events and drives relay channels per the Actuation Behavior Contract
+(requirements). **This milestone drives 2 channels directly from XIAO spare pins** (LM + LB,
+steady/luz-hierarchy engine); the remaining channels and the companion ESP32-S3 SuperMini stack
+(FR-038, TD-012) land in spec 006-can-act-full. Same behavior-engine semantics everywhere
+(AGENTS rule 5) — spec 006 reuses this engine.
 
-- **XIAO stack**: the controller runs as firmware on the **companion ESP32-S3 SuperMini**
-  (FR-038). It receives the same `EVT` lines on UART (115200-8N1, one-way from the XIAO, which
-  forwards every `CMD` event to both USB and UART) and drives the relays; its own USB serial
-  carries `DBG out=` lines. When the link is idle, the XIAO logs `DBG uart=idle` and keeps
-  running voice + feedback.
-- **Pi**: the controller runs in-process via libgpiod.
+- **This milestone (XIAO direct)**: `lm` → LM steady; `lb` → LM + LB steady; `la` → LB + LM
+  (LA channel not wired yet — logged `DBG out=la state=unwired`, spec 006). All channels OFF at
+  boot (NFR-009).
+- **Spec 006 (companion)**: the controller runs as firmware on the companion over UART.
+- **Spec 005 (Pi)**: the controller runs in-process via libgpiod.
 
 | Behavior (registry enum) | Engine |
 |---|---|
@@ -149,42 +145,41 @@ blink starts; parqueo while a single blink is active → overrides into hazard. 
 at boot and after reset (NFR-009). Timing via a 50 ms non-blocking tick — classification never
 pauses for outputs.
 
-### Relay hardware (9 channels) + wiring
+### Relay hardware (2 channels in this milestone)
 
-- **Companion ESP32-S3 SuperMini (XIAO stack)**: relays on non-strapping pins GPIO1…GPIO10
-  (S3 strapping pins 0/3/45/46 avoided); active-LOW relay board with pull-ups to 3V3 so all
-  channels are OFF at boot (NFR-009); coils on **external 5 V** (JD-VCC jumper removed for opto
-  isolation) — never from USB. Full pin map + power rules: [Wiring](#wiring-xiao-stack) below.
-- **Orange Pi**: `libgpiod` on the 26-pin header + 3.3 V relay board (Q-010 resolved — Pi
-  actuation is in scope because the bench decides the winner).
+- **XIAO direct**: a 2-channel relay sub-board driven from spare header pins (active-LOW inputs,
+  pull-ups to 3V3 so channels are OFF at boot, coils on external 5 V). Wire LM and LB; the
+  `la`/`lb` commands exercise the steady/hierarchy engine. The full **9-channel companion stack**
+  (GPIO1…GPIO10 pin map, UART contract) is specified in spec 006-can-act-full.
 
-### Wiring (XIAO stack)
+### Wiring — companion stack (spec 006, deferred)
+
+The 9-channel companion wiring schema (SuperMini relay pin map, UART link, power rules) is
+preserved for spec 006-can-act-full. This milestone wires only the XIAO-side audio path
+(validated 2026-11-20: I2S D2/D3/D4 = GPIO3/4/5, MAX98357A VIN on 5 V VBUS, GAIN/SD floating)
+plus 2 direct relay channels (LM, LB).
 
 ```text
 ══════ XIAO ESP32S3 SENSE — VOICE (PDM mic is on the Sense board, no wiring) ════
  USB-C ◄── power + console (EVT / DBG pred= / DBG play=)
- 5V (VBUS) ──► MAX98357A VIN        (baseline — Q-014 open: VBUS 5 V vs GPIO 3.3 V)
+ 5V (VBUS) ──► MAX98357A VIN        (Q-014 resolved: VBUS 5 V)
  D2 (GPIO3)  I2S BCLK ──► MAX98357A BCLK
  D3 (GPIO4)  I2S LRC  ──► MAX98357A LRC
  D4 (GPIO5)  I2S DIN  ──► MAX98357A DIN
- D6 (GPIO43) UART0 TX ──► SuperMini GPIO44 (RX)
- D7 (GPIO44) UART0 RX ◄─ SuperMini GPIO43 (TX, optional DBG)
  MAX98357A OUT+/OUT− ──► speaker (4–8 Ω, 3 W); GAIN + SD unconnected (9 dB, enabled)
 
-══════ ESP32-S3 SUPERMINI — COMPANION (actuation) ════
- USB-C ── power + console (DBG out= lines)
- GPIO44 (RX) ◄── XIAO D6 TX;  GPIO43 (TX) ──► XIAO D7 RX (optional)
- 3V3 ──► relay board VCC (opto LED side)
+══════ THIS MILESTONE — 2 direct relay channels on XIAO spare pins ════
+ D5 (GPIO6) ──► relay IN1 (LM)     3V3 ──► relay VCC (opto side)
+ D8 (GPIO7) ──► relay IN2 (LB)     External 5 V ──► relay JD-VCC (jumper removed)
+                                   XIAO GND ──► relay GND (common GND bus)
+                                   Pull-ups to 3V3 on IN1/IN2 (active-LOW = OFF at boot)
+
+══════ PRESERVED FOR SPEC 006 — companion ESP32-S3 SuperMini stack ════
+ D6 (GPIO43) UART0 TX ──► SuperMini GPIO44 (RX)
+ D7 (GPIO44) UART0 RX ◄─ SuperMini GPIO43 (TX, optional DBG)
  GPIO1 ►IN1 (LM)  GPIO2 ►IN2 (LB)  GPIO4 ►IN3 (LA)   GPIO5 ►IN4 (GD)
  GPIO6 ►IN5 (GI)  GPIO7 ►IN6 (LPB) GPIO8 ►IN7 (LPA)  GPIO9 ►IN8 (A)
  GPIO10 ►IN9 (CC)
-
-══════ RELAY BOARD (9-channel, opto-isolated, ACTIVE-LOW) + POWER RULES ════
- External 5 V ──► JD-VCC (jumper REMOVED — coil isolation)
- SuperMini 3V3 ──► relay VCC
- External 5 V GND, relay GND, XIAO GND, SuperMini GND, MAX98357A GND ──► COMMON GND BUS
- Pull-ups to 3V3 on IN1…IN9 (active-LOW inputs: floating/pulled-high = relays OFF at boot)
- Relay COM/NO terminals ──► car circuits (bench loads during M3)
 ```
 
 | Rule | Why |
@@ -231,15 +226,17 @@ EI library shell as runtime (rejected: EI is export-only); ESP-IDF rewrite (reje
 the proven arduino-cli workflow for no inference benefit). `AllOpsResolver` keeps the flatbuffer
 portable.
 
-**TD-005 — Pi runtime: Python `tflite_runtime` + `sounddevice` + ctypes DSP.** Alternatives:
-C++ runtime on the Pi (rejected: no benefit at 200 ms budget, kills iteration speed); full
-TensorFlow (fallback only if the aarch64 interpreter wheel is unavailable).
+**TD-005 — Pi runtime: Python `tflite_runtime` + `sounddevice` + ctypes DSP.** *(Runtime lands in
+spec 005, final phase — owner decision 2026-11-21.)* Alternatives: C++ runtime on the Pi
+(rejected: no benefit at 200 ms budget, kills iteration speed); full TensorFlow (fallback only
+if the aarch64 interpreter wheel is unavailable).
 
 **TD-007 — arduino-cli + esp32 Arduino core, same as lampara-aliz.** Alternative: PlatformIO or
 ESP-IDF (rejected: toolchain churn with zero model benefit).
 
-**TD-008 — Events over USB serial (XIAO) / stdout JSON lines (Pi)**; actuation local. Alternatives:
-MQTT/WiFi control plane (rejected: v1 non-goal, keep the device isolated).
+**TD-008 — Events over USB serial (XIAO) / stdout JSON lines (Pi)**; actuation local.
+*(XIAO form this milestone; Pi form in spec 005.)* Alternatives: MQTT/WiFi control plane
+(rejected: v1 non-goal, keep the device isolated).
 
 **TD-009 — 9 relay channels on header GPIOs; I2C PCF8574 expander as fallback.** *(Superseded by
 TD-012 — after adding the MAX98357A speaker, the XIAO header no longer has room for 9 relays.)*
@@ -248,15 +245,16 @@ Alternatives: dedicated automotive shield (none exists for XIAO), direct high-si
 (deferred — the bench rig uses relays).
 
 **TD-012 — Dual-MCU XIAO stack: the companion ESP32-S3 SuperMini drives the relays over UART**
-(FR-038, Q-013). Reason: the XIAO header (~11 GPIOs) is consumed by PDM mic (2) + MAX98357A I2S
-(3) + UART to the companion (2); 9 relay channels do not fit alongside. The companion receives
-the same `EVT` contract lines — reusing the event contract means zero new protocol design — and
-runs the behavior engines locally, keeping boot safety local to the relays. Pin budget: XIAO =
-mic 2 + I2S 3 + UART 2 = 7 of ~11; companion = 9 relays + UART RX on non-strapping pins
-GPIO1…GPIO10 (+ GPIO20/21 spare). Alternatives: I2C PCF8574 expander (TD-009 — viable but adds a
-protocol + driver for no gain over a second generic MCU); in-process GPIO on the XIAO
-(impossible — no pins); moving voice to the companion (rejected — mic + I2S are wired to the
-XIAO).
+(FR-038, Q-013). *(Implementation lands in spec 006-can-act-full — owner decision 2026-11-21;
+this milestone drives ≤ 2 channels directly from the XIAO.)* Reason: the XIAO header (~11 GPIOs)
+is consumed by PDM mic (2) + MAX98357A I2S (3) + UART to the companion (2); 9 relay channels do
+not fit alongside. The companion receives the same `EVT` contract lines — reusing the event
+contract means zero new protocol design — and runs the behavior engines locally, keeping boot
+safety local to the relays. Pin budget: XIAO = mic 2 + I2S 3 + UART 2 = 7 of ~11; companion = 9
+relays + UART RX on non-strapping pins GPIO1…GPIO10 (+ GPIO20/21 spare). Alternatives: I2C
+PCF8574 expander (TD-009 — viable but adds a protocol + driver for no gain over a second generic
+MCU); in-process GPIO on the XIAO (impossible — no pins); moving voice to the companion
+(rejected — mic + I2S are wired to the XIAO).
 
 **TD-011 — Pre-rendered TTS clip for wake confirmation** (D-006, FR-018). Alternatives: runtime
 TTS on the Pi (rejected: the XIAO cannot synthesize speech → divergent behavior = bug, AGENTS
@@ -270,13 +268,12 @@ clips will use is proven.
 
 | Level | What | How |
 |---|---|---|
-| On-device | Interaction script | US-001 AC1–AC3 executed on both devices via event log |
-| On-device | Output timing | relay probes: blink/pulse durations within FR-009 tolerances |
-| On-device | Audio feedback | WAKE → Escuchando timing (start ≤ 200 ms, ≤ 500 ms, NFR-010) + CMD → comando timing (start ≤ 200 ms, ≤ 300 ms, FR-037) on both devices |
-| On-device | UART link | companion receives `EVT` lines from XIAO and actuates; `DBG uart=idle` when the link is absent (FR-038) |
-| On-device | Boot safety | all channels OFF at boot/reset (NFR-009); `SPK_INIT_FAILED` on missing output |
-| On-device | Inference latency | ≤ 400 ms XIAO / ≤ 200 ms Pi logged (NFR-001) |
-| On-device | Stage C rollout | each new label recognized + actuated on both devices (T16–T24) |
+| On-device | Interaction script | US-001 AC1–AC3 executed on the XIAO via event log |
+| On-device | Output timing | relay probes on LM/LB: steady/hierarchy behavior within FR-009 tolerances |
+| On-device | Audio feedback | WAKE → Escuchando timing (start ≤ 200 ms, ≤ 500 ms, NFR-010) + CMD → comando timing (start ≤ 200 ms, ≤ 300 ms, FR-037) on the XIAO |
+| On-device | Boot safety | all wired channels OFF at boot/reset (NFR-009); `SPK_INIT_FAILED` on missing output |
+| On-device | Inference latency | ≤ 400 ms logged (NFR-001) |
+| Deferred | UART link / companion, Pi parity, rollout | spec 006-can-act-full (FR-038) and spec 005 (Pi runtime) |
 
 ## Observability
 

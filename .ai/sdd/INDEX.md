@@ -9,12 +9,13 @@
 |---|---|---|---|
 | [001](specs/001-can-hear/requirements.md) | Can Hear — CLI, dataset tooling, recorder utilities, MFCC parity | Milestone 1 — Can hear | `tasks:approved` |
 | [002](specs/002-can-think/requirements.md) | Can Think — features, subset training (la+lb), host TFLite test, export + parity gate | Milestone 2 — Can think | `tasks:approved` |
-| [003](specs/003-can-act/requirements.md) | Can Act — staged: deploy → relays → per-command rollout — firmware + Pi runtime, SuperMini relays, audio confirmations, device recording | Milestone 3 — Can act | `requirements:draft` |
-| [004](specs/004-can-decide/requirements.md) | Can Decide — benchmark + device decision (runs last) | Milestone 4 — Can decide | `requirements:draft` |
-| [005](specs/005-archived/requirements.md) | Archived — EI one-way sync, docs + release | Milestone 5 — Archived | `requirements:draft` |
+| [003](specs/003-can-act/requirements.md) | Can Act — XIAO only: staged console → audio → 2 direct relays | Milestone 3 — Can act | `requirements:draft` |
+| [006](specs/006-can-act-full/requirements.md) | Can Act Full — companion SuperMini 9 relays + command rollout (stub) | Milestone 6 — Can act full | `requirements:draft` |
+| [004](specs/004-can-decide/requirements.md) | Can Decide — XIAO benchmark (Pi comparison deferred to 005) | Milestone 4 — Can decide | `requirements:draft` |
+| [005](specs/005-archived/requirements.md) | **Final phase** — Pi runtime + parity, EI sync, docs + release | Milestone 5 — Pi + archived | `requirements:draft` |
 
-Approval order follows the milestones: approve 001 → implement Milestone 1 while reviewing 002,
-and so on. **No open questions remain system-wide** (Q-011 resolved 2026-11-19: fixed-time
-wipers; the on-device US-002 recording pass moved from 001 to 003 as T28 — owner decision
-2026-11-19). Task-level dependencies and the derived critical path:
+Approval order: 001 → 002 → 003 → 006 → 004 → 005 (owner decision 2026-11-21: Orange Pi in
+the final phase; companion SuperMini stack + rollout in 006). **No open questions remain in any
+approved spec** (Q-011 resolved 2026-11-19; Q-014 resolved 2026-11-21; US-002's Pi pass moved to
+005). Task-level dependencies and the derived critical path:
 [CRITICAL-PATH.md](CRITICAL-PATH.md).
