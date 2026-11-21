@@ -51,7 +51,6 @@ def test_header_matches_generator_output():
         thresholds_path=DEFAULT_THRESHOLDS,
         registry_path=DEFAULT_REGISTRY,
         labels_path=REPO_ROOT / "build/labels.json",
-        train_report_path=REPO_ROOT / "build/train_report.json",
     )
     assert read_config() == expected
 
@@ -118,7 +117,6 @@ def test_unknown_trained_command_fails_loudly(tmp_path):
             load_thresholds(path),
             load_registry(DEFAULT_REGISTRY),
             labels_path=None,
-            train_report_path=None,
         )
 
 

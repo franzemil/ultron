@@ -16,13 +16,18 @@ is ``tests/test_esp32_config.py``.
 Class order (the "frozen" order the model's output is indexed by, spec 002
 TD-012) comes from, in order of precedence:
 
-1. ``--labels PATH`` (``build/labels.json`` written by ``ultron export tflite``)
-2. ``build/train_report.json`` → ``class_order`` (if a training run left one)
-3. derived: ``wake``, ``noise``, then the *trained* commands in registry order.
+1. ``--labels PATH`` — ``build/labels.json`` written by ``ultron export tflite``
+   for the artifact actually being flashed;
+2. derived: ``wake``, ``noise``, then the *trained* commands in registry order.
 
-Option 3 is what makes the header generatable before the spec-002 artifact
+Option 2 is what makes the header generatable before the spec-002 artifact
 exists; it reproduces ``wake noise lb la`` for the current thresholds file. The
 header records which source was used, so a stale class order is visible.
+
+Deliberately NOT used: ``build/train_report.json``. It is a byproduct of a local
+training run, not a frozen export artifact, and keying the header off it made the
+generated file depend on whether some unrelated test had written a report into
+``build/`` — non-deterministic between machines.
 
 Usage:
     uv run python scripts/gen_esp32_config.py            # write the header
@@ -42,7 +47,6 @@ DEFAULT_OUT = REPO_ROOT / "devices/esp32/ultron_voice/config.h"
 DEFAULT_THRESHOLDS = REPO_ROOT / "model/thresholds.json"
 DEFAULT_REGISTRY = REPO_ROOT / "model/registry.json"
 DEFAULT_LABELS = REPO_ROOT / "build/labels.json"
-DEFAULT_TRAIN_REPORT = REPO_ROOT / "build/train_report.json"
 
 # Base classes that every export carries (spec 002 TD-012).
 BASE_CLASSES = ("wake", "noise")
@@ -88,20 +92,13 @@ def resolve_class_order(
     thresholds: dict,
     registry: dict,
     labels_path: Path | None,
-    train_report_path: Path | None,
 ) -> tuple[list[str], str]:
     """Return (frozen class order, provenance string)."""
     if labels_path is not None and labels_path.is_file():
         labels = json.loads(labels_path.read_text(encoding="utf-8"))
         if not isinstance(labels, list) or not labels:
             raise ConfigError(f"{labels_path}: expected a non-empty JSON list of labels")
-        return [str(x) for x in labels], f"build/labels.json ({labels_path.name})"
-
-    if train_report_path is not None and train_report_path.is_file():
-        report = json.loads(train_report_path.read_text(encoding="utf-8"))
-        order = report.get("class_order")
-        if order:
-            return [str(x) for x in order], "build/train_report.json class_order"
+        return [str(x) for x in labels], "build/labels.json (export artifact)"
 
     registry_ids = [str(cmd["id"]) for cmd in registry["commands"]]
     trained = set(thresholds["commands"])
@@ -237,13 +234,10 @@ def generate(
     thresholds_path: Path = DEFAULT_THRESHOLDS,
     registry_path: Path = DEFAULT_REGISTRY,
     labels_path: Path | None = DEFAULT_LABELS,
-    train_report_path: Path | None = DEFAULT_TRAIN_REPORT,
 ) -> str:
     thresholds = load_thresholds(thresholds_path)
     registry = load_registry(registry_path)
-    class_order, order_source = resolve_class_order(
-        thresholds, registry, labels_path, train_report_path
-    )
+    class_order, order_source = resolve_class_order(thresholds, registry, labels_path)
     return render(
         thresholds,
         registry,
@@ -264,7 +258,6 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_LABELS,
         help="build/labels.json (frozen class order); falls back to derivation",
     )
-    parser.add_argument("--train-report", type=Path, default=DEFAULT_TRAIN_REPORT)
     parser.add_argument(
         "--check",
         action="store_true",
@@ -278,7 +271,6 @@ def main(argv: list[str] | None = None) -> int:
             thresholds_path=args.thresholds,
             registry_path=args.registry,
             labels_path=args.labels,
-            train_report_path=args.train_report,
         )
     except ConfigError as exc:
         print(f"gen_esp32_config: {exc}", file=sys.stderr)
