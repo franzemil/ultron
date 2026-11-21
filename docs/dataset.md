@@ -25,8 +25,14 @@ owner-supplied external recordings (phone/PC). The mic source is tagged in
 the filename: `lm_xiao_01.wav` / `lm_ext_01.wav`.
 
 ```
-ultron dataset ingest <source> <label> --mic xiao|pi|ext [--dest dataset/originals]
+ultron dataset ingest <source> <label> --mic xiao|pi|ext [--dest dataset]
 ```
+
+`--dest` is the **dataset root** (the directory that holds `originals/`): clips
+land in `<dest>/originals/<label>/`, so the default `dataset` writes
+`dataset/originals/lm/lm_xiao_01.wav`. Do **not** pass `--dest dataset/originals`
+— that nests a second `originals/` level and splits the label tree in two (a
+stray `originals/originals/` tree was found on the owner machine, T28).
 
 Label must be a lowercase ASCII slug (`lm`, `lb`, `gd`, `wake`, `noise`, …).
 

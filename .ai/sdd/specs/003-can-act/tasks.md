@@ -138,6 +138,15 @@ is off the path — it runs once the hardware is live.
   ingest + validate the device WAVs (`ultron dataset ingest` + `ultron dataset validate`); record
   at least one session per trained label for a later retrain; document the session in
   `docs/recording.md`.
+- Progress ([#35](https://github.com/franzemil/ultron/issues/35)):
+  - [x] Recorder compiles on the project toolchain — `PDM.h` (removed in core 3.3.x) replaced by
+        `ESP_I2S` PDM RX on the same pins (data GPIO41 / clock GPIO40); `ls` / `get` added so the
+        WAVs are pulled over USB without a card reader (`devices/esp32/tools/xiao_pull.py`).
+  - [x] Ingest + validate + parity-on-device pipeline wired and tested (`--mic xiao` tagging;
+        `tests/test_dsp_parity.py::test_per_frame_parity_on_device_recordings`).
+  - [ ] On-device takes — **blocked**: the shared XIAO hung mid-session (enumerates, answers no
+        bytes) and needs a physical RESET/replug; owner steps in `docs/recording.md`.
+  - [ ] `ultron dataset validate` + parity numbers on real device clips (follow the same doc).
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `docs/recording.md`.
 - Verify: device-recorded WAVs pass `ultron dataset validate` (US-002 AC3); the XIAO writes
   phrase-labeled WAVs (US-002 AC1); MFCC parity is green on features from real recordings; clips

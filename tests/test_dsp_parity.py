@@ -27,6 +27,9 @@ Scope: per-frame MFCC parity only. The analysis window (2 s / 100 frames,
 out of scope for this frame-level parity test.
 """
 
+import wave
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -154,4 +157,80 @@ def test_per_frame_parity(mfcc):
     # NFR-007 DSP clause: per-frame max abs diff <= 1e-3
     assert max_abs_diff <= 1e-3, (
         f"parity failed: max abs diff {max_abs_diff:.2e} > 1e-3 over {n_frames} frames"
+    )
+
+
+# ---- parity on real device recordings (T28 / US-002) -----------------------
+#
+# The test above proves the C library agrees with the pinned reference on
+# synthetic audio. T28 additionally proves it on the audio the *device* wrote:
+# a XIAO PDM capture has a different noise floor, a possible DC offset and full
+# 5 s takes instead of 3 s, so any int16-rounding or framing assumption in the C
+# path that the synthetic signal happens not to hit would surface here.
+#
+# The recordings live under dataset/ (gitignored, AGENTS rule 2), so the test
+# skips when no device clip is present — CI stays green, and the owner's machine
+# runs the real check after the recording pass:
+#
+#     uv run pytest tests/test_dsp_parity.py -q -s -k device
+DEVICE_DATASET_ROOT = Path(__file__).resolve().parents[1] / "dataset" / "originals"
+
+
+def device_recordings():
+    """XIAO-tagged clips ingested into dataset/originals/<label>/."""
+    if not DEVICE_DATASET_ROOT.is_dir():
+        return []
+    return sorted(DEVICE_DATASET_ROOT.glob("*/*_xiao_*.wav"))
+
+
+def read_wav_int16(path):
+    """Return the samples of a dataset clip, asserting the dataset format."""
+    with wave.open(str(path), "rb") as wav:
+        rate = wav.getframerate()
+        channels = wav.getnchannels()
+        sampwidth = wav.getsampwidth()
+        raw = wav.readframes(wav.getnframes())
+    if (rate, channels, sampwidth) != (SAMPLE_RATE, 1, 2):
+        raise AssertionError(
+            f"{path}: expected {SAMPLE_RATE} Hz / 16-bit / mono, "
+            f"got {rate} Hz / {sampwidth * 8}-bit / {channels}ch"
+        )
+    return np.frombuffer(raw, dtype="<i2")
+
+
+def test_per_frame_parity_on_device_recordings(mfcc):
+    """C MFCC vs the pinned reference on every XIAO-tagged device recording."""
+    clips = device_recordings()
+    if not clips:
+        pytest.skip(
+            "no XIAO device recordings under dataset/originals "
+            "(run the T28 recording pass; dataset/ is gitignored)"
+        )
+
+    per_clip = []
+    worst = 0.0
+    total_frames = 0
+    for path in clips:
+        signal = read_wav_int16(path)
+        clip_max = 0.0
+        clip_frames = 0
+        for frame in frames_of(signal):
+            c_coeffs = np.array(mfcc.compute(frame), dtype=np.float64)
+            diff = float(np.max(np.abs(c_coeffs - reference_mfcc(frame))))
+            clip_max = max(clip_max, diff)
+            clip_frames += 1
+        per_clip.append((path.name, clip_frames, clip_max))
+        worst = max(worst, clip_max)
+        total_frames += clip_frames
+
+    print("\ndevice-recording MFCC parity (C library vs NumPy reference):")
+    print(f"  {'clip':<28} {'frames':>7}  {'max abs diff':>12}")
+    for name, frames, diff in per_clip:
+        print(f"  {name:<28} {frames:>7}  {diff:>12.3e}")
+    print(f"  {'TOTAL':<28} {total_frames:>7}  {worst:>12.3e}")
+
+    assert total_frames > 0, "device recordings produced no frames"
+    assert worst <= 1e-3, (
+        f"device-recording parity failed: max abs diff {worst:.2e} > 1e-3 "
+        f"over {total_frames} frames from {len(per_clip)} clip(s)"
     )
