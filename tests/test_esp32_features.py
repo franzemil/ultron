@@ -228,3 +228,60 @@ int main(void) {
     assert got.tolist() == expected.tolist(), (
         f"rounding mismatch — firmware {got.tolist()} vs numpy {expected.tolist()}"
     )
+
+
+def test_nwc_to_ncw_transpose_matches_numpy(firmware_binary: Path, tmp_path):
+    """The int8 layout mapping the firmware applies must equal numpy's transpose.
+
+    Onnx2tf 1.28/TF 2.21 emit the int8 input as NCW [1, 13, 100]; if this mapping
+    were wrong, inference would run on scrambled coefficients and every score
+    would be noise — a failure that is invisible on the host without this test.
+    """
+    rng = np.random.default_rng(7)
+    nwc = rng.integers(-128, 127, size=(N_FRAMES, N_COEFFS), dtype=np.int8)
+
+    probe = tmp_path / "transpose_probe.c"
+    probe.write_text(
+        """
+#include <stdio.h>
+#include <stdlib.h>
+#include "features_core.h"
+int main(int argc, char **argv) {
+    if (argc != 4) return 2;
+    const int frames = atoi(argv[1]);
+    const int coeffs = atoi(argv[2]);
+    static int8_t nwc[64 * 32];
+    static int8_t ncw[64 * 32];
+    FILE *in = fopen(argv[3], "rb");
+    if (!in) return 3;
+    if (fread(nwc, 1, (size_t)frames * coeffs, in) != (size_t)frames * coeffs) return 4;
+    fclose(in);
+    ultron_transpose_int8_nwc_to_ncw(nwc, ncw, frames, coeffs);
+    fwrite(ncw, 1, (size_t)frames * coeffs, stdout);
+    return 0;
+}
+""",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "transpose_probe"
+    compile_cmd = [
+        "cc",
+        "-std=c99",
+        f"-I{ESP32_DIR}",
+        str(probe),
+        str(ESP32_DIR / "features_core.c"),
+        "-lm",
+        "-o",
+        str(exe),
+    ]
+    built = subprocess.run(compile_cmd, capture_output=True, text=True)
+    assert built.returncode == 0, built.stderr
+
+    raw = tmp_path / "nwc.bin"
+    raw.write_bytes(nwc.tobytes())
+    run = subprocess.run(
+        [str(exe), str(N_FRAMES), str(N_COEFFS), str(raw)], capture_output=True
+    )
+    assert run.returncode == 0
+    got = np.frombuffer(run.stdout, dtype=np.int8).reshape(N_COEFFS, N_FRAMES)
+    assert np.array_equal(got, nwc.T), "NWC → NCW transposition is wrong"

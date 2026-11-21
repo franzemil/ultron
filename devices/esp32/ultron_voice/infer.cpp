@@ -11,7 +11,8 @@
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
-#include "model_data.h" /* generated: g_model[] + ULTRON_MODEL_PLACEHOLDER */
+#include "features_core.h" /* ultron_transpose_int8_nwc_to_ncw() */
+#include "model_data.h"    /* generated: g_model[] + ULTRON_MODEL_PLACEHOLDER */
 
 namespace ultron {
 namespace {
@@ -81,14 +82,10 @@ int infer_run(const int8_t *features, float *scores, int n_classes) {
     memcpy(g_input->data.int8, features,
            (size_t)g_stats.n_frames * (size_t)g_stats.n_coeffs * sizeof(int8_t));
   } else {
-    /* NWC features (frame-major) → NCW tensor (coefficient-major). */
-    int8_t *dst = g_input->data.int8;
-    for (int f = 0; f < g_stats.n_frames; f++) {
-      for (int c = 0; c < g_stats.n_coeffs; c++) {
-        dst[(size_t)c * (size_t)g_stats.n_frames + (size_t)f] =
-            features[(size_t)f * (size_t)g_stats.n_coeffs + (size_t)c];
-      }
-    }
+    /* NWC features (frame-major) → NCW tensor (coefficient-major); the mapping
+     * is pinned by tests/test_esp32_features.py. */
+    ultron_transpose_int8_nwc_to_ncw(features, g_input->data.int8, g_stats.n_frames,
+                                     g_stats.n_coeffs);
   }
 
   const uint32_t t0 = micros();

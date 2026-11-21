@@ -63,3 +63,13 @@ void ultron_quantize_int8(const float *src, size_t n, float scale, int zero_poin
     dst[i] = (int8_t)q;
   }
 }
+
+void ultron_transpose_int8_nwc_to_ncw(const int8_t *nwc, int8_t *ncw, int frames, int coeffs) {
+  if (nwc == NULL || ncw == NULL || frames <= 0 || coeffs <= 0) return;
+  for (int f = 0; f < frames; f++) {
+    for (int c = 0; c < coeffs; c++) {
+      /* src index f*coeffs + c (frame-major) → dst index c*frames + f */
+      ncw[c * frames + f] = nwc[f * coeffs + c];
+    }
+  }
+}

@@ -55,6 +55,16 @@ int ultron_window_to_mfcc(const mfcc_ctx_t *ctx, const int16_t *window, size_t w
  * round() there is numpy's half-to-even, so nearbyint() is the matching C call. */
 void ultron_quantize_int8(const float *src, size_t n, float scale, int zero_point, int8_t *dst);
 
+/* NWC (frame-major, 100 x 13) → NCW (coefficient-major, 13 x 100).
+ *
+ * The features above are always produced in the archive/host layout (frames x
+ * coefficients), which is also what `ultron features` writes. Onnx2tf 1.28 /
+ * TF 2.21 emit the int8 flatbuffer as NCW `[1, 13, 100]` (measured; the exporter
+ * tolerates both layouts), so the firmware transposes the int8 tensor before
+ * inference when the model asks for NCW. Kept here — not in infer.cpp — so the
+ * host tests can pin the mapping without the TFLM/Arduino stack. */
+void ultron_transpose_int8_nwc_to_ncw(const int8_t *nwc, int8_t *ncw, int frames, int coeffs);
+
 #ifdef __cplusplus
 }
 #endif

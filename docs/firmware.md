@@ -141,6 +141,14 @@ US-001 AC1 (real wake → real command) stays **blocked on the spec-002 artifact
 placeholder is explicitly not claimed as a pass. The event contract and state machine are
 proven separately (host tests + the `ULTRON_SELFTEST` build).
 
+### Ops in the flatbuffer
+
+Measured on the committed placeholder with the TFLite interpreter: `CONV_2D`, `MAX_POOL_2D`,
+`MEAN`, `FULLY_CONNECTED`, `RESHAPE`, `SOFTMAX`, `TRANSPOSE` (KwsNet's `Conv1d`/`MaxPool1d`
+lower to their 2-D forms in the ONNX → TFLite path). All are TFLite builtins, so the
+`AllOpsResolver` covers them; a future model that needs an op TFLM lacks fails loudly at
+`AllocateTensors()` (`EVT ERROR code=MODEL_INIT_FAILED`), never silently.
+
 ### Input layout (measured, not assumed)
 
 The exporter's docstring says the TFLite input comes back NWC `(1, 100, 13)`. On this machine
