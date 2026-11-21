@@ -8,7 +8,8 @@
 | NFR-005 | T4, T5, T5.1 |
 | NFR-006 | T2 |
 | NFR-007 (DSP clause) | T6 |
-| US-002 | T4 |
+| US-002 | T4 (on-device pass: spec 003 T28) |
+| US-008 | T3 |
 
 This spec **is** Milestone 1 (can hear) — see [.ai/sdd/PLAN.md](../../PLAN.md). Siblings: spec 002
 (Milestone 2 — Can think), spec 003 (Milestone 3 — Can act), spec 004 (Milestone 4 — Can decide),
@@ -69,7 +70,7 @@ criteria before the next begins.
   `docs/recording.md`.
 - Verify: XIAO records a 5 s WAV to SD (DONE response); Pi recorder writes a valid WAV
   (`ultron dataset validate` passes it). **Deferred (D-012):** this on-device verify is optional
-  and moved to T7 — not required for the Milestone 1 gate.
+  and moved to spec 003 T28 (US-002 recording pass) — not required for the Milestone 1 gate.
 
 ### T5 — Seeded augmentation (2 h)
 - Covers: NFR-005. Deps: T3. Priority: Must.
@@ -119,14 +120,15 @@ stop and update the spec (never silently implement).
   green; recorded WAVs pass `ultron dataset validate`.
 
 ### T9 — Long-take recording + pyannote VAD split (3 h)
-- Covers: FR-027, FR-028, FR-029, FR-030, FR-031, NFR-008; US-002. Deps: T4. Priority: Should.
+- Covers: FR-027, FR-028, FR-029, FR-030, FR-031, NFR-011; US-002. Deps: T4. Priority: Should.
 - Checklist: `cli/src/ultron/record_long.py` — record-long subcommand (20 s continuous take, one label); `cli/src/ultron/split.py` — split subcommand using pyannote.audio VAD; slice segments into `{label}_local_<nn>.wav`; validate `--label` against registry; HF token handling; host-side tests with stubbed pyannote.
 - Likely files: `cli/src/ultron/record_long.py`, `cli/src/ultron/split.py`, `tests/test_record_long.py`, `tests/test_split.py`.
 - Verify: `uv run ultron record-long --help` exits 0; `uv run ultron split --help` exits 0; `uv run pytest tests/test_split.py` green; missing HF token fails fast; `--label` rejects unknown codes.
 
-### T7 — Hardware validation pass, XIAO + Pi (optional — deferred)
+### T7 — Hardware validation pass, XIAO + Pi (optional — deferred; moved to spec 003 T28)
 - Covers: US-002 AC1/AC2 on-device pass (D-012). Deps: T2–T6 (all merged). Priority: **Optional —
-  deferred**; does **not** gate the Milestone 1 exit.
+  deferred**; does **not** gate the Milestone 1 exit. The owner moved this pass to spec 003 as
+  T28 (2026-11-19); it is kept here for history.
 - Run whenever a hardware session is convenient: flash `wav_recorder` on the XIAO; `rec {label}` →
   5 s WAV on SD (DONE response); Pi `record.py` capture; `dataset ingest` + `ultron dataset
   validate` on device recordings; MFCC parity on real WAVs; tick the deferred verify boxes in the

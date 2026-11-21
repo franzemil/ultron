@@ -2,8 +2,9 @@
 
 ## Executive summary
 
-A uv workspace with a `ultron` Typer CLI ingests, validates, and repairs the dataset; both device
-recorders write 16 kHz/16-bit/mono WAVs labeled by phrase; seeded ffmpeg augmentation (and an
+A uv workspace with a `ultron` Typer CLI ingests, validates, and repairs the dataset
+(owner-supplied external recordings; the device recorders moved to spec 003); seeded ffmpeg
+augmentation (and an
 opt-in synthetic generator) multiply the corpus; and one shared C MFCC library — compiled three
 ways from the same bytes — guarantees train-vs-device feature parity against the lampara-aliz EI
 reference.
@@ -59,8 +60,8 @@ by T3:
     { "id": "gi",  "sigla": "GI",  "phrase": ["guiñador izquierdo", "enciende guiñador izquierdo"],     "behavior": "blink_45s",          "channels": ["gi"] },
     { "id": "p",   "sigla": "P",   "phrase": ["parqueo", "enciende parqueo"],                           "behavior": "blink_until_cancel", "channels": ["gd", "gi"] },
     { "id": "cp",  "sigla": "CP",  "phrase": ["cancelar parqueo"],                                      "behavior": "cancel",             "channels": [] },
-    { "id": "lpb", "sigla": "LPB", "phrase": ["limpia parabrisas baja", "enciende limpia parabrisas baja"], "behavior": "motor",          "channels": ["lpb"] },
-    { "id": "lpa", "sigla": "LPA", "phrase": ["limpia parabrisas alta", "enciende limpia parabrisas alta"], "behavior": "motor",          "channels": ["lpa"] },
+    { "id": "lpb", "sigla": "LPB", "phrase": ["limpia parabrisas baja", "enciende limpia parabrisas baja"], "behavior": "motor_45s",       "channels": ["lpb"] },
+    { "id": "lpa", "sigla": "LPA", "phrase": ["limpia parabrisas alta", "enciende limpia parabrisas alta"], "behavior": "motor_45s",       "channels": ["lpa"] },
     { "id": "a",   "sigla": "A",   "phrase": ["arranque", "enciende arranque"],                         "behavior": "pulse_2s",           "channels": ["a"] },
     { "id": "cc",  "sigla": "CC",  "phrase": ["cierre centralizado", "enciende cierre centralizado"],   "behavior": "pulse_05s",          "channels": ["cc"] }
   ],
@@ -153,7 +154,7 @@ ultron split dataset/takes/take_001_lb.wav --label lb [--hf-token TOKEN]
 - `split`: runs pyannote.audio Voice Activity Detection on the take, slices each speech segment into its own WAV, writes `{label}_local_<nn>.wav` under `dataset/originals/<label>/`.
 - `--label` validated against `model/registry.json` (FR-030).
 - Hugging Face token required for pyannote model download (`PYANNOTE_HF_TOKEN` env var or `--hf-token`) (FR-031).
-- VAD-only pipeline — no STT, no diarization, no on-device speech models (NFR-008).
+- VAD-only pipeline — no STT, no diarization, no on-device speech models (NFR-011).
 - Output WAVs are 16 kHz / 16-bit / mono; pass `ultron dataset validate` (FR-021).
 
 **Files:**
