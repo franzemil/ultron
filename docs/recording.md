@@ -186,8 +186,8 @@ recording, validation or parity number below is invented.**
 |---|---|
 | Board | Seeed XIAO ESP32S3 **Sense** (expanded version with the PDM mic + microSD slot) |
 | USB | Espressif native USB, `VID 0x303A PID 0x1001` → `/dev/cu.usbmodem2101` |
-| Mic | on-board PDM (MSM261D3526H1CPM): data `GPIO41`, clock `GPIO40` |
-| Storage | microSD in the Sense slot, SPI, CS `GPIO10` |
+| Mic | on-board PDM (MSM261D3526H1CPM): data `GPIO41`, clock `GPIO40` — same pins the pre-T28 sketch used; confirm with `xiao_pull.py mic` on the first live session |
+| Storage | microSD in the Sense slot, SPI, CS `GPIO10` (never reached on hardware yet — see the blocker section) |
 | Toolchain | `arduino-cli` 1.5.1, ESP32 core **3.3.12**, `esp32:esp32:XIAO_ESP32S3`, USB mode *Hardware CDC and JTAG*, CDC on boot enabled |
 
 ### What the pass does
@@ -280,6 +280,13 @@ trained subset: `wake` 11/30, `noise` 6/30, `la` 13/40, `lb` 11/40 originals, an
 training report on this machine shows a fresh hold-out accuracy of **0.25** with
 every sample predicted `la` (confusion columns all in the `la` column,
 `build/train_report.json`) — a spec 002 problem, out of T28's scope.
+
+| Check | What it proves |
+|---|---|
+| `arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/wav_recorder` | the sketch builds on the project toolchain — the `PDM.h` blocker is fixed (360001 B flash / 23352 B globals, no sketch warnings with `--warnings all`) |
+| `uv run pytest tests/test_xiao_pull.py -q` | the pull tooling validates formats and its CLI surface (no hardware needed) |
+| `uv run pytest tests/test_dsp_parity.py -q` | MFCC parity stays green (`2 passed`); the device-recording case skips while no `xiao` clip exists |
+| **not run** | the on-device takes, `ultron dataset validate` on device WAVs, and the device parity numbers — blocked, see below |
 
 ### Blocked on hardware (device hung before the first take)
 
