@@ -100,6 +100,17 @@ is off the path — it runs once the hardware is live.
   timeout visible as `EVT` lines); single-window inference ≤ 400 ms logged (NFR-001); serial emits
   contract lines only; arena + RAM stats within the design Memory budget (inference path
   ≤ 240 KB, NFR-002).
+- Status (2026-11-21): implementation landed — `docs/firmware.md`, issue #37.
+  - [x] Build: `arduino-cli compile` clean for `esp32:esp32:XIAO_ESP32S3` (606 KB flash,
+        169 560 B static RAM).
+  - [x] Host verification: state machine (FR-001…FR-008, FR-019, FR-037, Q-005) and the exact
+        contract lines in `tests/test_esp32_state_machine.py`; firmware↔host feature parity
+        (byte-identical int8 tensor) in `tests/test_esp32_features.py`; generated-config guards in
+        `tests/test_esp32_config.py`.
+  - [ ] On-device Verify line — **open**, two independent blockers: the shared XIAO is hung
+        (needs a physical reset) and spec 002's trained artifact is not reproducible on this
+        machine, so the firmware currently embeds a clearly-labelled PLACEHOLDER model. US-001
+        AC1 is therefore not claimed.
 
 ### T14 — Audio feedback: "Escuchando" + "comando" (2 h)
 - Covers: FR-018, FR-019, FR-037, NFR-010, US-007. Deps: T12. Priority: Must.

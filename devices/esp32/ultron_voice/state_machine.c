@@ -30,10 +30,14 @@ static const ultron_cmd_gate *gate_for_class(const ultron_sm_config *cfg, int cl
 
 /* FR-019 / FR-037: does [window_start_ms, now_ms] intersect the playback
  * interval [playback_start, playback_end)? If yes the window's frames heard the
- * device's own clip and must not decide anything. */
+ * device's own clip and must not decide anything.
+ *
+ * The interval outlives the clip on purpose: a 2 s window captured while the
+ * clip played keeps overlapping it for up to 2 s after playback ends, and it
+ * must stay discarded for as long as it overlaps. */
 static bool window_overlaps_playback(const ultron_sm *sm, uint32_t window_start_ms,
                                      uint32_t now_ms) {
-  if (!sm->playback_active) return false;
+  if (!sm->playback_interval_valid) return false;
   return window_start_ms < sm->playback_end_ms && now_ms > sm->playback_start_ms;
 }
 
@@ -53,7 +57,7 @@ static void emit_timeout(ultron_sm *sm, uint32_t now_ms) {
 /* Leave CONFIRMING once the feedback clip (if any) has finished; the 5 s
  * command window starts when playback ends (FR-019 / NFR-010). */
 static void finish_confirming(ultron_sm *sm, uint32_t now_ms) {
-  const uint32_t timer_origin = sm->playback_active ? sm->playback_end_ms : now_ms;
+  const uint32_t timer_origin = sm->playback_interval_valid ? sm->playback_end_ms : now_ms;
   sm->state = ULTRON_SM_LISTENING;
   sm->window_start_ms = timer_origin;
   sm->window_refreshed = false;
@@ -73,6 +77,7 @@ void ultron_sm_init(ultron_sm *sm, const ultron_sm_config *cfg, ultron_emit_fn e
 
 void ultron_sm_playback_start(ultron_sm *sm, uint32_t now_ms, uint32_t duration_ms) {
   sm->playback_active = true;
+  sm->playback_interval_valid = true;
   sm->playback_start_ms = now_ms;
   sm->playback_end_ms = now_ms + duration_ms;
 }
@@ -147,9 +152,13 @@ ultron_state ultron_sm_update(ultron_sm *sm, const float *scores, uint32_t windo
       emit(sm, &evt);
 
       sm->state = ULTRON_SM_CONFIRMING;
-      /* Console-only build has no clip: duration 0 → LISTENING starts now.
-       * T14 arms the real "Escuchando" duration via ultron_sm_playback_start. */
-      finish_confirming(sm, now_ms);
+      /* The WAKE sink (feedback layer, T14) arms the clip synchronously through
+       * ultron_sm_playback_start(), so CONFIRMING lasts exactly as long as the
+       * clip. Console-only T12 arms nothing → CONFIRMING lasts 0 ms and the 5 s
+       * window starts on this same tick (no listening time invented). */
+      if (!(sm->playback_active && now_ms < sm->playback_end_ms)) {
+        finish_confirming(sm, now_ms);
+      }
     }
     return sm->state;
   }

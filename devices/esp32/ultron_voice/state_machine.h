@@ -87,9 +87,10 @@ typedef struct {
   ultron_state state;
   uint32_t window_start_ms;   /* command window timer origin (playback end) */
   bool window_refreshed;      /* Q-005: at most one refresh per window */
-  bool playback_active;       /* a feedback clip is (or was) playing */
-  uint32_t playback_start_ms; /* valid while playback_active */
-  uint32_t playback_end_ms;   /* valid while playback_active */
+  bool playback_active;       /* a feedback clip is playing right now          */
+  bool playback_interval_valid; /* a clip interval exists for the overlap rule */
+  uint32_t playback_start_ms; /* start of the last/current clip                */
+  uint32_t playback_end_ms;   /* end of the last/current clip                  */
   ultron_emit_fn emit;
   void *emit_user;
   uint32_t windows_seen;    /* DBG counter: classified windows processed */
@@ -101,7 +102,13 @@ void ultron_sm_init(ultron_sm *sm, const ultron_sm_config *cfg, ultron_emit_fn e
 
 /* Feedback hooks (T14/T15 use them; console-only T12 leaves playback at 0 ms).
  * FR-019/FR-037: a window whose captured frames overlap a playback interval is
- * excluded from decisions; inference and DBG logging continue. */
+ * excluded from decisions; inference and DBG logging continue.
+ *
+ * Contract with the feedback layer: call ultron_sm_playback_start() from *inside*
+ * the emit callback of the WAKE event (synchronously, before ultron_sm_update()
+ * returns). That is what makes CONFIRMING last exactly as long as the clip and
+ * the 5 s window start at its end (FR-019/NFR-010). A target with no clip arms
+ * nothing and CONFIRMING lasts 0 ms (console-only T12). */
 void ultron_sm_playback_start(ultron_sm *sm, uint32_t now_ms, uint32_t duration_ms);
 void ultron_sm_playback_end(ultron_sm *sm, uint32_t now_ms);
 
