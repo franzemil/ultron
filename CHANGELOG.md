@@ -9,6 +9,9 @@
 > This file is never hand-edited (bot commits only).
 
 ## 2026-11-21
+- spec(003): approve requirements, design and tasks gates (#34) — @franzemil
+
+## 2026-11-21
 - feat(cli): host TFLite inference — ultron infer files + mic (T10) (#32) — @franzemil
 
 ## 2026-11-17
