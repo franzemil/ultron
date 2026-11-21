@@ -176,10 +176,13 @@ def dataset_ingest(
         help="Mic source tag: xiao (XIAO PDM), pi (Pi USB mic), or ext (owner-supplied external).",
     ),
     dest: str = typer.Option(
-        "dataset/originals",
+        "dataset",
         "--dest",
         "-d",
-        help="Destination dataset directory (defaults to dataset/originals/<label>).",
+        help=(
+            "Dataset ROOT (the directory that holds originals/). Clips land in "
+            "<dest>/originals/<label>/, so the default gives dataset/originals/<label>/."
+        ),
     ),
 ) -> None:
     """Copy and label WAVs from ANY source (device or owner-supplied external recordings)."""

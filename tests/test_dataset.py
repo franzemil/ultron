@@ -82,6 +82,30 @@ def test_dcfix_recenters_waveform(tmp_path):
     assert abs(mean) < 50, f"DC offset not removed, mean={mean}"
 
 
+def test_ingest_cli_dest_default_is_the_dataset_root(tmp_path, monkeypatch):
+    """`--dest` is the dataset root, and the default must not nest originals/.
+
+    Regression for the T28 finding: the CLI default used to be
+    ``dataset/originals`` while ``ingest()`` appends ``originals/<label>``, so
+    the default invocation wrote ``dataset/originals/originals/<label>/`` and
+    split a label tree in two (a stray ``originals/originals/`` tree was found
+    on the owner machine).
+    """
+    import inspect
+
+    from ultron.cli import dataset_ingest
+
+    default = inspect.signature(dataset_ingest).parameters["dest"].default
+    assert getattr(default, "default", default) == "dataset"
+
+    # And the end-to-end layout the default produces, in a scratch root.
+    monkeypatch.chdir(tmp_path)
+    n = ingest(VALID_DIR, "la", "xiao", "dataset")
+    assert n == 1
+    assert os.path.isfile(os.path.join("dataset", "originals", "la", "la_xiao_01.wav"))
+    assert not os.path.isdir(os.path.join("dataset", "originals", "originals"))
+
+
 def test_registry_validates():
     ok, errors = validate_registry("model/registry.json")
     assert ok, errors

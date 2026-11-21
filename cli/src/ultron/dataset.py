@@ -90,10 +90,16 @@ def _next_nn(label_dir, label, mic):
 
 
 def ingest(source, label, mic, dest):
-    """Copy and label WAVs from ANY source into dataset/originals/<label>/.
+    """Copy and label WAVs from ANY source into <dest>/originals/<label>/.
 
     FR-020: device recordings and owner-supplied external recordings alike,
     tagging the mic source in the filename (lm_xiao_01.wav / lm_ext_01.wav).
+
+    ``dest`` is the dataset ROOT (the directory that holds ``originals/``),
+    not the originals directory itself: passing ``dataset`` writes
+    ``dataset/originals/<label>/``. Passing an ``.../originals`` path nests a
+    second ``originals`` level (that is how the stray
+    ``originals/originals/`` tree was produced — T28).
     """
     if mic not in VALID_MICS:
         _fail(f"invalid mic '{mic}'; must be one of {sorted(VALID_MICS)}")
