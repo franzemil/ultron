@@ -156,19 +156,22 @@ it runs once the hardware is live and feeds later rollout retrains.
 
 ### T15 — Output controller + relays: companion SuperMini (4 h)
 - Covers: FR-009, FR-017, FR-038, NFR-009. Deps: T12, spec 001 T3 (registry). Priority: Must.
-- Checklist: wire the XIAO ↔ ESP32-S3 SuperMini UART per the design Wiring schema; SuperMini
+- Checklist: wire the XIAO ↔ ESP32-S3 SuperMini UART per the design Wiring schema — XIAO D8
+  (GPIO7) = TX → SuperMini GPIO44 (RX), XIAO D9 (GPIO8) = RX ← SuperMini GPIO43 (TX); SuperMini
   firmware parses the same `EVT` lines on UART (115200-8N1) and runs **all** behavior engines
   (`steady` / `blink_45s` / `blink_until_cancel` / `cancel` / `motor_45s` / `pulse_2s` /
   `pulse_05s`) over **9 relays on GPIO1…GPIO10** (non-strapping pins, pull-ups for active-LOW
   inputs), 50 ms non-blocking tick, boot-safe outputs (NFR-009), `DBG out=` lines on its own USB
   serial (pin map per TD-012; PCF8574 fallback per TD-009); XIAO forwards `WAKE`/`CMD` events over
   UART and logs `DBG uart=idle` when the link is absent (FR-038); **bring-up scaffolding**: ≤ 2
-  channels (LM, exercising `steady`, and GD, exercising `blink_45s`) wired directly to XIAO spare
-  pins to prove the engines, decommissioned once the companion link is verified.
+  channels (LM, exercising `steady`, and GD, exercising `blink_45s`) wired directly to the XIAO on
+  IN1 → D5 (GPIO6) and IN2 → D6 (GPIO43), decommissioned once the companion link is verified;
+  **scaffold removal (end of T15):** remove the D5/D6 scaffold and settle the companion UART link
+  on D8/D9 (GPIO7/GPIO8) — never D6/D7 (GPIO43/GPIO44 are the U0TXD/U0RXD console pads).
 - Likely files: `devices/esp32/supermini_controller/supermini_controller.ino`,
   `devices/esp32/ultron_voice/uart_forward.{h,cpp}`,
   `devices/esp32/ultron_voice/outputs_scaffold.{h,cpp}` (temporary — deleted at T15 completion),
-  `docs/wiring.md`.
+  `devices/esp32/relay_probe/relay_probe.ino`, `docs/wiring.md`.
 - Verify: scripted commands over the UART link produce contract-conformant channel timing —
   blink 1 s on / 1 s off × 45 s, A = 2 s ±50 ms, CC = 0.5 s ±50 ms, CP stops parqueo < 200 ms,
   wiper window = 45 s — all channels OFF at boot; the XIAO's voice + feedback behavior is

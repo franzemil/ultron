@@ -146,13 +146,13 @@ has already closed when the clip plays.
 
 **FR-038 (Must)** — THE SYSTEM SHALL drive the 9 relay channels only from the **companion
 ESP32-S3 SuperMini** (a second ESP32-S3 board wired to the XIAO over UART, 115200-8N1,
-one-way), which receives the Target Event Contract `EVT` lines from the XIAO and runs the
-Actuation Behavior Contract locally. The XIAO header budget is reserved for the PDM microphone
-and the MAX98357A I2S speaker. The companion's channels SHALL be OFF at boot; if the UART link
-is idle, the XIAO SHALL still run voice + feedback and log `DBG uart=idle`. During Stage B
-bring-up only (T15 scaffolding), ≤ 2 channels may be driven directly on the XIAO as temporary
-scaffolding — removed by the end of T15; the shipping configuration drives all 9 from the
-companion.
+one-way, on XIAO D8/D9 = GPIO7/GPIO8), which receives the Target Event Contract `EVT` lines from
+the XIAO and runs the Actuation Behavior Contract locally. The XIAO header budget is reserved for
+the PDM microphone and the MAX98357A I2S speaker. The companion's channels SHALL be OFF at boot;
+if the UART link is idle, the XIAO SHALL still run voice + feedback and log `DBG uart=idle`.
+During Stage B bring-up only (T15 scaffolding), ≤ 2 channels may be driven directly on the XIAO
+as temporary scaffolding — IN1 on D5 (GPIO6) and IN2 on D6 (GPIO43) — removed by the end of T15;
+the shipping configuration drives all 9 from the companion.
 
 ## Actuation Behavior Contract
 

@@ -167,13 +167,15 @@ pauses for outputs.
  D2 (GPIO3)  I2S BCLK ──► MAX98357A BCLK
  D3 (GPIO4)  I2S LRC  ──► MAX98357A LRC
  D4 (GPIO5)  I2S DIN  ──► MAX98357A DIN
- D6 (GPIO43) UART0 TX ──► SuperMini GPIO44 (RX)
- D7 (GPIO44) UART0 RX ◄─ SuperMini GPIO43 (TX, optional DBG)
+ D8 (GPIO7)  UART TX ──► SuperMini GPIO44 (RX)
+ D9 (GPIO8)  UART RX ◄─ SuperMini GPIO43 (TX, optional DBG)
  MAX98357A OUT+/OUT− ──► speaker (4–8 Ω, 3 W); GAIN + SD unconnected (9 dB, enabled)
+ D5 (GPIO6)  ►IN1 relay scaffold (active-LOW, pull-up to 3V3)   [T15 — removed at end of T15]
+ D6 (GPIO43) ►IN2 relay scaffold (active-LOW, pull-up to 3V3)   [T15 — removed at end of T15]
 
 ══════ ESP32-S3 SUPERMINI — COMPANION (actuation) ════
  USB-C ── power + console (DBG out= lines)
- GPIO44 (RX) ◄── XIAO D6 TX;  GPIO43 (TX) ──► XIAO D7 RX (optional)
+ GPIO44 (RX) ◄── XIAO D8 TX;  GPIO43 (TX) ──► XIAO D9 RX (optional)
  3V3 ──► relay board VCC (opto LED side)
  GPIO1 ►IN1 (LM)  GPIO2 ►IN2 (LB)  GPIO4 ►IN3 (LA)   GPIO5 ►IN4 (GD)
  GPIO6 ►IN5 (GI)  GPIO7 ►IN6 (LPB) GPIO8 ►IN7 (LPA)  GPIO9 ►IN8 (A)
@@ -187,6 +189,10 @@ pauses for outputs.
  Relay COM/NO terminals ──► car circuits (bench loads during M3)
 ```
 
+GPIO43 (D6) is the XIAO's U0TXD pad (default UART0 TX / console pad) — the scaffold occupies it
+only temporarily; it is freed when the scaffold is removed at the end of T15. The USB-C console
+is unaffected (native USB = GPIO19/20).
+
 | Rule | Why |
 |---|---|
 | Relay coils on external 5 V | 9 coils ≈ 0.8 A worst case — would brown-out USB power |
@@ -194,6 +200,8 @@ pauses for outputs.
 | JD-VCC jumper removed | Coil switching noise stays out of the logic side |
 | Active-LOW board + pull-ups to 3V3 | Floating inputs would turn relays ON at boot (NFR-009) |
 | Relays on GPIO1…GPIO10 | S3 strapping pins (0/3/45/46) avoided |
+| Scaffold relays on XIAO D5/D6 (GPIO6/GPIO43) | Temporary T15 bring-up only — removed at the end of T15 |
+| Companion UART on D8/D9 (GPIO7/GPIO8), not D6/D7 | GPIO43/GPIO44 are the U0TXD/U0RXD console pads — keep them free |
 | No SD card anywhere | Clips in flash, mic audio in RAM |
 
 > **Hardware-validated (spike `devices/esp32/spike_audio`, 2026-11-20).** The I2S path above
@@ -202,6 +210,11 @@ pauses for outputs.
 > `loop()` task stack is ≈ 8 KB, so playback buffers are **static**, never stack-allocated. The
 > spike's source asset is 16 kHz s16le **stereo**; production clips are mono, so the player adapts
 > the slot layout (duplicate each sample for stereo mode, or use mono slot mode).
+
+> **Scaffold fact (2026-11-21).** The relay board's two inputs are temporarily wired directly on
+> the XIAO — IN1 → D5 (GPIO6), IN2 → D6 (GPIO43) — as the T15 bring-up scaffolding (≤ 2 channels
+> driven directly, removed at the end of T15). GPIO43 is the U0TXD pad, so the scaffold occupies it
+> only temporarily; the companion UART link therefore runs on D8/D9 (GPIO7/GPIO8), not D6/D7.
 
 ## Memory budget (XIAO)
 
@@ -252,7 +265,8 @@ Alternatives: dedicated automotive shield (none exists for XIAO), direct high-si
 (3) + UART to the companion (2); 9 relay channels do not fit alongside. The companion receives
 the same `EVT` contract lines — reusing the event contract means zero new protocol design — and
 runs the behavior engines locally, keeping boot safety local to the relays. Pin budget: XIAO =
-mic 2 + I2S 3 + UART 2 = 7 of ~11; companion = 9 relays + UART RX on non-strapping pins
+mic 2 + I2S 3 + UART 2 (GPIO7/GPIO8) = 7 of ~11, plus 2 temporary scaffold pins (GPIO6/GPIO43)
+during T15 bring-up; companion = 9 relays + UART RX on non-strapping pins
 GPIO1…GPIO10 (+ GPIO20/21 spare). Alternatives: I2C PCF8574 expander (TD-009 — viable but adds a
 protocol + driver for no gain over a second generic MCU); in-process GPIO on the XIAO
 (impossible — no pins); moving voice to the companion (rejected — mic + I2S are wired to the
