@@ -51,6 +51,7 @@ dependencies and the derived critical path (≈ 52.5 h, rollout-dominated) live 
 **Hardware logistics**: Milestone 1 closes on host-side criteria — external recordings satisfy
 the data minimums (D-012), so the Pi USB microphone and XIAO are only needed for the deferred,
 optional device pass (HW-1). The Pi USB microphone must be on hand before Milestone 3 (runtime
-capture + device recording, T28); the MAX98357A I2S amp + speaker (XIAO) and the USB audio dongle
-+ powered speaker (Pi) must be on hand before Milestone 3 (T14, audio feedback); the 9-channel
-relay board + ESP32-S3 SuperMini must be on hand before Milestone 3 (T15, relays).
+capture + device recording, T28); the MAX98357A I2S amp + speaker (XIAO, **path validated
+2026-11-20**) and the USB audio dongle + powered speaker (Pi) must be on hand before Milestone 3
+(T14, audio feedback); the 9-channel relay board + ESP32-S3 SuperMini must be on hand before
+Milestone 3 (T15, relays).

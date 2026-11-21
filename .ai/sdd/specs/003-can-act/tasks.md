@@ -12,7 +12,7 @@ is off the critical path. Each stage is demonstrable on its own before the next 
 | FR-001, FR-002, FR-004, FR-005, FR-006, FR-007 | T12, T13 |
 | FR-003, FR-008 | T12, T13 |
 | FR-009, FR-017, NFR-009 | T15, T13 |
-| FR-015 | T13 |
+| FR-015 (spec 002 — per-class thresholds applied) | T13 |
 | FR-018, FR-019, FR-037, NFR-010 | T14 |
 | FR-038 | T15 |
 | FR-013, FR-032 (spec 002 — retrain/subset clauses exercised by rollout) | T16–T24 |
@@ -46,15 +46,26 @@ channels per registry: `la` → `la`+`lb`+`lm`, `lb` → `lb`.
 - [ ] `.status` reads `requirements:approved` (currently `requirements:draft`)
 - [ ] `.status` reads `design:approved`
 - [ ] `.status` reads `tasks:approved` — **gates all implementation work**
-- [x] **Q-011 resolved (fixed-time wipers, owner decision 2026-11-19) — no open questions
-      remain in any milestone spec**
+- [x] **Q-011 resolved (fixed-time wipers, owner decision 2026-11-19)**
+- [ ] **Q-014 (MAX98357A power source) open — resolve before requirements approval**
 - [ ] Specs 001/002 delivered: MFCC library, `model_int8.tflite` / `model_fp16.tflite`,
       `labels.json`, thresholds
-- [ ] Hardware present: 9-channel relay board, ESP32-S3 SuperMini + UART jumpers, MAX98357A +
-      speaker (XIAO), USB audio dongle + speaker (Pi)
+- [x] **XIAO audio output validated (spike `devices/esp32/spike_audio`, 2026-11-20)** — MAX98357A
+      + speaker play a flash-streamed clip over I2S on D2/D3/D4 (GPIO3/4/5)
+- [ ] Hardware present: 9-channel relay board, ESP32-S3 SuperMini + UART jumpers, USB audio
+      dongle + speaker (Pi)
 
 Implementation must be executed in dependency order; each task is verified by its own acceptance
 criteria before the next begins.
+
+## Hardware validation evidence
+
+Spikes prove a mechanism; they **mark no task complete** (see the 002 T11 rule).
+
+| Spike | Date | Result | De-risks |
+|---|---|---|---|
+| [`devices/esp32/spike_audio`](../../../devices/esp32/spike_audio/) | 2026-11-20 | Spanish-TTS clip streamed from flash to the MAX98357A over I2S (D2/D3/D4 = GPIO3/4/5, GAIN/SD floating); static ≤ 4 KB chunks | T14 (XIAO playback), TD-011 |
+| [`devices/esp32/power_probe`](../../../devices/esp32/power_probe/) | open | Drives D10 (GPIO9) at 3.3 V to test powering the amp's VIN from a GPIO | amp power source (Q-014, open) |
 
 ## Critical path (within this spec)
 
@@ -63,21 +74,22 @@ Only spec-003 tasks are shown. Entry dependencies: MFCC library (001 T6), model 
 
 ```mermaid
 flowchart LR
-    T12["T12 · firmware core<br/>3 h"] --> T15["T15 · outputs + relays<br/>3 h"]
+    T12["T12 · firmware core<br/>3 h"] --> T15["T15 · companion relays<br/>4 h"]
     T13["T13 · Pi runtime<br/>5 h"]
-    T14["T14 · audio feedback<br/>3 h"]
+    T14["T14 · audio feedback<br/>2 h"]
+    T28["T28 · device recording<br/>2 h"]
     T12 --> T14
     T13 --> T14
     T15 --> T16["T16–T24 · rollout<br/>9 × 2.5 h = 22.5 h"]
     classDef crit stroke:#e03131,stroke-width:3px
     classDef off stroke:#adb5bd,stroke-dasharray:5 3
     class T12,T15,T16 crit
-    class T13,T14 off
+    class T13,T14,T28 off
 ```
 
-**Critical path: T12 → T15 → T16 … T24 (3 + 4 + 22.5 = 29.5 h).** T13 (5 h) and T14 (3 h) run
+**Critical path: T12 → T15 → T16 … T24 (3 + 4 + 22.5 = 29.5 h).** T13 (5 h) and T14 (2 h) run
 in parallel. If Stage A exit (T14) is enforced before Stage B starts, the path becomes
-T13 → T14 → T15 → T16…T24 (≈ 34.5 h). T28 (device-mic recording pass, US-002) is off the path —
+T13 → T14 → T15 → T16…T24 (≈ 33.5 h). T28 (device-mic recording pass, US-002) is off the path —
 it runs once the hardware is live and feeds later rollout retrains.
 
 ## Tasks
@@ -116,18 +128,21 @@ it runs once the hardware is live and feeds later rollout retrains.
   `devices/orangepi/Makefile` (builds `dsp` .so), `docs/pi.md`.
 - Verify: the same US-001 AC1–AC3 script passes on the Pi; inference ≤ 200 ms logged (NFR-001);
   event JSON validates against the contract; output-timing parity with T15's scripted-command
-  checks.
+  checks; both targets load the **identical** flatbuffer (SHA-256 of `model_int8.tflite` matches
+  on XIAO and Pi — US-004 AC1).
 
-### T14 — Audio feedback: "Escuchando" + "comando" on both targets (3 h)
+### T14 — Audio feedback: "Escuchando" + "comando" on both targets (2 h)
 - Covers: FR-018, FR-019, FR-037, NFR-010, US-007. Deps: T12 (XIAO core), T13 (Pi runtime).
   Priority: Must.
 - Checklist: render + commit `assets/escuchando.wav` (Spanish TTS, 16 k/16-bit/mono, ≤ 500 ms,
-  silence-trimmed) and `assets/comando.wav` (Spanish TTS word or short tone, ≤ 300 ms); XIAO I2S
-  output to MAX98357A + speaker with the `CONFIRMING` state and playback-overlap window discard
-  (design, TD-011); Pi playback via `sounddevice` through the USB dongle; identical
-  trigger/timing/fail-fast (`SPK_INIT_FAILED`) semantics on both targets; `DBG play=` lines;
-  wiring + volume notes. The cross-target parity pass (feedback timing/semantics vs recorded
-  logs, parity table) is part of this task's verify.
+  silence-trimmed) and `assets/comando.wav` (Spanish TTS word or short tone, ≤ 300 ms); reuse the
+  **hardware-validated I2S path** from `spike_audio` (D2/D3/D4, GAIN/SD floating; static ≤ 4 KB
+  chunks, adapt mono assets to the slot layout); wire it into the `CONFIRMING` state and the
+  playback-overlap window discard (design, TD-011); Pi playback via `sounddevice` through the USB
+  dongle; identical trigger/timing/fail-fast (`SPK_INIT_FAILED`) semantics on both targets;
+  `DBG play=` lines; wiring + volume notes. The 1.5 h I2S bring-up is retired — effort goes to
+  clip production, state integration and cross-target parity (feedback timing/semantics vs
+  recorded logs, parity table).
 - Likely files: `assets/escuchando.wav`, `assets/comando.wav`,
   `devices/esp32/ultron_voice/feedback.{h,cpp}`, `devices/orangepi/feedback.py`,
   `docs/feedback.md`.
@@ -167,17 +182,23 @@ divergence between targets is a bug.)
 
 ### T16–T24 — Rollout cycles, one per remaining command (2–3 h each)
 Each task = one record → train → validate → export → redeploy cycle for a single command
-(FR-013 retrain clause; FR-032, spec 002; TD-012). Shared procedure, every task in order:
+(FR-013 retrain clause; FR-032, spec 002; TD-012).
 
-1. `ultron record` session for the new label + fresh `wake` + `noise` takes; `ultron dataset
-   validate` green (FR-023–FR-025, spec 001).
-2. `ultron features && ultron train run && ultron train sweep` — fresh hold-out ≥ NFR-003;
-   `model/thresholds.json` regenerated (trained commands only).
-3. `ultron export tflite` — parity ≥ 99% or fail; `ultron infer files` spot-check on **both**
-   artifacts (FR-034, spec 002).
-4. Redeploy the identical flatbuffer to XIAO + Pi (AGENTS.md rule 5); verify the new label
-   end-to-end and that all previously-rolled-out labels still pass.
-5. PR description carries NFR-006 metadata (per-label counts, seed, pinned versions).
+- Covers (each): FR-013, FR-032 (spec 002), NFR-003, NFR-006. Deps: Stage B complete; spec 002
+  T7–T10 CLIs. Priority: Must — one cycle per command, registry order or owner-chosen order.
+- Checklist (shared, every task in order):
+  1. `ultron record` session for the new label + fresh `wake` + `noise` takes; `ultron dataset
+     validate` green (FR-023–FR-025, spec 001).
+  2. `ultron features && ultron train run && ultron train sweep` — fresh hold-out ≥ NFR-003;
+     `model/thresholds.json` regenerated (trained commands only).
+  3. `ultron export tflite` — parity ≥ 99% or fail; `ultron infer files` spot-check on **both**
+     artifacts (FR-034, spec 002).
+  4. Redeploy the identical flatbuffer to XIAO + Pi (AGENTS.md rule 5); verify the new label
+     end-to-end and that all previously-rolled-out labels still pass.
+  5. PR description carries NFR-006 metadata (per-label counts, seed, pinned versions).
+- Likely files (each): `dataset/originals/<label>/`, `model/thresholds.json`,
+  `build/model_int8.tflite`, `build/model_fp16.tflite`, `build/labels.json`,
+  `devices/esp32/ultron_voice/config.h` (registry + thresholds rebuilt).
 
 | Task | Command | Registry channels / behavior |
 |---|---|---|
@@ -191,8 +212,6 @@ Each task = one record → train → validate → export → redeploy cycle for 
 | T23 | `a` | `a`, pulse_2s |
 | T24 | `cc` | `cc`, pulse_05s |
 
-- Covers (each): FR-013, FR-032 (spec 002), NFR-003, NFR-006. Deps: Stage B complete; spec 002
-  T7–T10 CLIs. Priority: Must — one cycle per command, registry order or owner-chosen order.
 - Verify (each): the new label is recognized live on both devices (event log) and actuates its
   registry channels; all previously-rolled-out labels still pass; NFR-006 metadata in the PR.
 
@@ -206,8 +225,9 @@ Each task = one record → train → validate → export → redeploy cycle for 
   `docs/recording.md`.
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
   `docs/recording.md`.
-- Verify: device-recorded WAVs pass `ultron dataset validate`; MFCC parity is green on features
-  from real recordings; clips are tagged with their device mic source.
+- Verify: device-recorded WAVs pass `ultron dataset validate` (US-002 AC3); the XIAO writes
+  phrase-labeled WAVs and the Pi captures the same format (US-002 AC1/AC2); MFCC parity is green
+  on features from real recordings; clips are tagged with their device mic source.
 
 ## Traceability note
 

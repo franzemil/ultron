@@ -101,7 +101,7 @@ any target.
 
 | Target | Output path | Playback |
 |---|---|---|
-| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on free header pins (SD pins unused at runtime — relays live on the companion, FR-038) | both clips streamed from flash via I2S |
+| XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on D2/D3/D4 (GPIO3/4/5) — **validated on hardware 2026-11-20**; SD pins free at runtime (relays live on the companion, FR-038) | both clips streamed from flash via I2S |
 | Pi | USB audio dongle → powered speaker (default ALSA device) | same clips via `sounddevice` output stream |
 
 Flash cost on XIAO: ~16 KB ("Escuchando", 500 ms) + ~10 KB ("comando", 300 ms) of 16 kHz int16
@@ -163,7 +163,7 @@ pauses for outputs.
 ```text
 ══════ XIAO ESP32S3 SENSE — VOICE (PDM mic is on the Sense board, no wiring) ════
  USB-C ◄── power + console (EVT / DBG pred= / DBG play=)
- 5V (VBUS) ──► MAX98357A VIN
+ 5V (VBUS) ──► MAX98357A VIN        (baseline — Q-014 open: VBUS 5 V vs GPIO 3.3 V)
  D2 (GPIO3)  I2S BCLK ──► MAX98357A BCLK
  D3 (GPIO4)  I2S LRC  ──► MAX98357A LRC
  D4 (GPIO5)  I2S DIN  ──► MAX98357A DIN
@@ -196,6 +196,13 @@ pauses for outputs.
 | Relays on GPIO1…GPIO10 | S3 strapping pins (0/3/45/46) avoided |
 | No SD card anywhere | Clips in flash, mic audio in RAM |
 
+> **Hardware-validated (spike `devices/esp32/spike_audio`, 2026-11-20).** The I2S path above
+> plays a Spanish-TTS clip from flash on the XIAO through the MAX98357A with **GAIN/SD floating**:
+> BCLK/LRC/DIN on D2/D3/D4 (GPIO3/4/5) confirmed. The spike streams in static ≤ 4 KB chunks — the
+> `loop()` task stack is ≈ 8 KB, so playback buffers are **static**, never stack-allocated. The
+> spike's source asset is 16 kHz s16le **stereo**; production clips are mono, so the player adapts
+> the slot layout (duplicate each sample for stereo mode, or use mono slot mode).
+
 ## Memory budget (XIAO)
 
 | Item | Budget | Estimated actual | Confirmed by |
@@ -211,6 +218,10 @@ pauses for outputs.
 Estimates are arithmetic from the design architecture; the "Confirmed by" column turns them into
 measured facts before tasks complete. Splitting into two models would *increase* RAM (two arenas)
 — size is a reason to keep the single model (TD-001, spec 002), not to split.
+
+Playback needs **no clip buffer in RAM**: the spike streams directly from flash in ≤ 4 KB chunks
+(2026-11-20). Because the `loop()` task stack is ≈ 8 KB, any temporary playback buffer must be
+`static` — never stack-allocated.
 
 ## Technical decisions
 
@@ -251,7 +262,9 @@ XIAO).
 TTS on the Pi (rejected: the XIAO cannot synthesize speech → divergent behavior = bug, AGENTS
 rule 5); owner-recorded clip (deferred: extra recording session, zero functional gain — the
 asset is a single file and can be swapped without code changes); buzzer beep (rejected: owner
-asked for spoken "Escuchando").
+asked for spoken "Escuchando"). **Validated on hardware 2026-11-20**: the `spike_audio` sketch
+streams a Spanish-TTS clip from flash to the MAX98357A over I2S (D2/D3/D4), so the mechanism both
+clips will use is proven.
 
 ## Verification strategy
 

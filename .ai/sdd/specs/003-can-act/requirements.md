@@ -248,7 +248,9 @@ A: **Resolved.** One Spanish-TTS WAV (16 kHz/16-bit/mono, ≤ 500 ms, silence-tr
 to the repo; both targets play it: XIAO streams it via I2S to a MAX98357A amp + speaker, the Pi
 plays it through a USB audio dongle. Trigger = wake acceptance; the 5 s command window starts at
 playback end (FR-019, NFR-010). Executed commands play the second fixed clip `assets/comando.wav`
-(≤ 300 ms, FR-037). No other spoken feedback in v1.
+(≤ 300 ms, FR-037). No other spoken feedback in v1. **XIAO path validated on hardware
+(2026-11-20)**: `devices/esp32/spike_audio` streams a Spanish-TTS clip from flash to the MAX98357A
+over I2S on D2/D3/D4 (GPIO3/4/5), GAIN/SD floating.
 
 **Q-013: Which board is the companion ESP32?**
 A: **Resolved (owner-supplied).** **ESP32-S3 SuperMini** — enough GPIOs for 9 relays + UART with
@@ -256,6 +258,12 @@ spare pins, same arduino-cli / esp32-core toolchain as the XIAO, USB-CDC console
 lines. Relay channels sit on non-strapping pins (GPIO1…GPIO10; S3 strapping pins 0/3/45/46 are
 avoided). No PSRAM, no audio hardware, and no SD card needed on the companion — it only parses
 `EVT` lines and drives GPIOs.
+
+**Q-014: How is the MAX98357A powered on the XIAO stack? (open — resolve before approval)**
+Baseline: 5 V VBUS (USB) → VIN, as drawn in the design wiring schema. The `power_probe` spike
+tests powering VIN from D10 (GPIO9, 3.3 V). This needs an owner decision because an ESP32 GPIO
+cannot supply the amp's peak current at 3 W output; 3.3 V from a GPIO is acceptable only as a
+bench experiment. GAIN/SD stay floating (validated on hardware 2026-11-20).
 
 ## Success Metrics
 
