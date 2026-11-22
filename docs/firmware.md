@@ -204,45 +204,62 @@ lines are formatted by the shipping code. The boot banner prints `DBG selftest=1
 and the interpreter keeps running, so `DBG pred=` and `infer_ms` stay real. It proves the
 state machine and the contract on hardware; it does **not** prove recognition.
 
-## Flash and capture (shared device)
+## Flash and capture
 
-The single XIAO is shared with the T14/T15/T28 workers, so **both** flashing and serial reads
-take the lock. Two mechanical facts that bite on macOS:
-
-- macOS has no `flock`; it has BSD `lockf`, which takes **no `-c` flag** — wrap a shell instead:
-  `lockf -k LOCKFILE /bin/sh -c '…'` (`-k` keeps the lock file, avoiding the unlink race).
-- `pyserial` is not installed. Console reads use the stdlib reader
-  `scripts/serial_log.py` (raw 8N1 via `termios`, optional timestamps, `--evt-only`).
+**One command** (compiles → preflight → flashes → optionally captures):
 
 ```sh
-# 1. preflight — is the chip alive at all? (read-only; never loop this)
-lockf -k /tmp/ultron-xiao.lock /bin/sh -c \
-  'python3 scripts/serial_log.py --seconds 5 --quiet'
-#    exit 0 → the chip is talking, go ahead
-#    exit 1 → port enumerated but zero bytes: HUNG. Stop, ask the owner for a physical reset.
-
-# 2. flash (compiles, then uploads bootloader + partitions + app)
-lockf -k /tmp/ultron-xiao.lock /bin/sh -c \
-  'arduino-cli upload -p /dev/cu.usbmodem2101 --fqbn esp32:esp32:XIAO_ESP32S3 \
-     devices/esp32/ultron_voice'
-
-# 3. capture the console (boot banner + DBG pred + EVT lines)
-lockf -k /tmp/ultron-xiao.lock /bin/sh -c \
-  'python3 scripts/serial_log.py --seconds 40'
+./scripts/deploy_xiao.sh                     # compile + flash
+./scripts/deploy_xiao.sh --listen 40         # …and save 40 s of console to /tmp/ultron-xiao-logs/
+./scripts/deploy_xiao.sh --selftest --listen 40   # scripted-score build (real EVT lines)
+./scripts/deploy_xiao.sh --compile-only      # build only — port untouched, safe while others flash
+./scripts/deploy_xiao.sh --dry-run           # print what it would run, execute nothing
 ```
 
-`--evt-only` prints just the contract lines (what hosts and the spec-004 bench parse);
-`--raw` drops timestamps for `> /tmp/xiao.log`. The reader exits non-zero when the port stays
-silent — a silent chip is a stop-and-escalate condition, **never** a retry loop.
+The script encodes the rules that are easy to get wrong by hand:
 
-For the scripted-score build, flash with the self-test flag and read the console the same way:
+1. **compile first** — a compile error never reaches the port;
+2. **preflight read** — a port that enumerates but returns zero bytes is a *hung chip*, so it
+   aborts (exit `1`) instead of uploading into it. A silent chip is a stop condition, never a
+   retry loop;
+3. **one failure message per stage**, with exit codes: `0` ok, `1` silent/hung, `2` usage,
+   `3` compile failed, `4` upload failed, `5` no console output after flashing.
+
+### Locking is opt-in
+
+`--lock` holds `/tmp/ultron-xiao.lock` for the whole run. The lock only matters when more than
+one worker touches the single board; **it is off by default**, and the script merely *reports*
+when the file is currently held by someone else (`Whether you then proceed is your call`).
+Use it when T14/T15/T28 are active:
 
 ```sh
-lockf -k /tmp/ultron-xiao.lock /bin/sh -c \
-  'arduino-cli upload -p /dev/cu.usbmodem2101 --fqbn esp32:esp32:XIAO_ESP32S3 \
-     --build-property "compiler.cpp.extra_flags=-DULTRON_SELFTEST=1" \
-     devices/esp32/ultron_voice'
+./scripts/deploy_xiao.sh --lock --listen 40
+# equivalent by hand (macOS lockf takes a command, not a string — there is no -c):
+lockf -k /tmp/ultron-xiao.lock /bin/sh -c './scripts/deploy_xiao.sh --listen 40'
 ```
+
+### By hand, if you prefer
+
+```sh
+# 1. build without touching the port
+arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+
+# 2. is the chip alive? (read-only; exit 1 = zero bytes = hung)
+python3 scripts/serial_log.py --seconds 5 --quiet; echo "exit=$?"
+
+# 3. flash (bootloader 0x0, partitions 0x8000, boot_app0 0xe000, app 0x10000)
+arduino-cli upload -p /dev/cu.usbmodem2101 --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+
+# 4. console
+python3 scripts/serial_log.py --seconds 40            # timestamped
+python3 scripts/serial_log.py --seconds 60 --evt-only  # contract lines only
+python3 scripts/serial_log.py --seconds 40 --raw > /tmp/xiao.log
+```
+
+`scripts/serial_log.py` is stdlib-only (`termios`) because pyserial is not installed; it exits
+non-zero when the port stays silent, so callers never mistake "no bytes" for "no events".
+Interactive alternative when you are the only worker: `screen /dev/cu.usbmodem2101 115200`
+(quit with `Ctrl-A K`) — but `screen` takes the port without any lock discipline.
 
 ## Regenerating after a retrain
 
