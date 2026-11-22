@@ -102,7 +102,7 @@ if [[ "$USE_LOCK" != "1" && "$DRY_RUN" != "1" ]]; then
   fi
 fi
 
-if [[ "$COMPILE_ONLY" != "1" ]]; then
+if [[ "$COMPILE_ONLY" != "1" && "$DRY_RUN" != "1" ]]; then
   [[ -e "$PORT" ]] || die "port ${PORT} does not exist (board unplugged?)"
 fi
 
@@ -123,7 +123,9 @@ BUILD_PROP=""
 if [[ "$SKIP_COMPILE" == "1" ]]; then
   log "compile: skipped (--skip-compile)"
 else
-  log "compile ${FQBN}$([[ $SELFTEST == 1 ]] && echo ' [selftest]')"
+  LABEL=""
+  if [[ "$SELFTEST" == "1" ]]; then LABEL=" [selftest]"; fi
+  log "compile ${FQBN}${LABEL}"
   if [[ "$DRY_RUN" == "1" ]]; then
     run arduino-cli compile --fqbn "$FQBN" $BUILD_PROP "$SKETCH"
   else
@@ -174,7 +176,9 @@ if [[ "$LISTEN_SECONDS" -gt 0 ]]; then
     sleep 2
   fi
   mkdir -p "$LOG_DIR"
-  LOG="${LOG_DIR}/xiao-$(date +%Y%m%d-%H%M%S)$([[ $SELFTEST == 1 ]] && echo '-selftest').log"
+  SUFFIX=""
+  if [[ "$SELFTEST" == "1" ]]; then SUFFIX="-selftest"; fi
+  LOG="${LOG_DIR}/xiao-$(date +%Y%m%d-%H%M%S)${SUFFIX}.log"
   log "capture: ${LISTEN_SECONDS}s → ${LOG}"
   set +e
   if [[ "$DRY_RUN" == "1" ]]; then
