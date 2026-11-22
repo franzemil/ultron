@@ -168,6 +168,11 @@ fi
 
 # ── 4. optional console capture ─────────────────────────────────────────────
 if [[ "$LISTEN_SECONDS" -gt 0 ]]; then
+  if [[ "$DRY_RUN" != "1" ]]; then
+    # The chip's USB-Serial/JTAG re-enumerates after --after hard-reset; give the
+    # host a moment before claiming the port, or the first read sees a dying fd.
+    sleep 2
+  fi
   mkdir -p "$LOG_DIR"
   LOG="${LOG_DIR}/xiao-$(date +%Y%m%d-%H%M%S)$([[ $SELFTEST == 1 ]] && echo '-selftest').log"
   log "capture: ${LISTEN_SECONDS}s → ${LOG}"

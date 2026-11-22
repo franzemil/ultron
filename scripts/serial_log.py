@@ -85,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     bytes_seen = 0
     lines = 0
     evt_lines = 0
+    reopens = 0
 
     try:
         while time.time() < deadline:
@@ -92,6 +93,25 @@ def main(argv: list[str] | None = None) -> int:
                 chunk = os.read(fd, 4096)
             except BlockingIOError:
                 chunk = b""
+            except OSError as exc:
+                # The sketch's USB CDC — or the whole USB-Serial-JTAG peripheral —
+                # disappears for a moment when the chip reboots or the sketch
+                # re-initialises USB (e.g. right after flashing). Re-open and keep
+                # listening instead of pretending the run ended.
+                reopens += 1
+                if reopens > 20:
+                    print(f"serial_log: port keeps failing ({exc}); giving up", file=sys.stderr)
+                    return 2
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                time.sleep(0.5)
+                try:
+                    fd = open_console(args.port, args.baud)
+                except OSError:
+                    pass
+                continue
             if not chunk:
                 continue
             bytes_seen += len(chunk)
