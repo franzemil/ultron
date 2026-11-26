@@ -64,15 +64,6 @@ def export_tflite_command(
     max_parity: int = typer.Option(
         1000, "--max-parity", min=10, help="Parity-set sample cap (>= 10)."
     ),
-    library: bool = typer.Option(
-        False,
-        "--library",
-        help="After exporting, refresh the UltronVoice Arduino library (embed the new "
-        "flatbuffer + config, bump library.properties). On by default when --out is build/.",
-    ),
-    no_library: bool = typer.Option(
-        False, "--no-library", help="Never touch devices/esp32/libraries/UltronVoice."
-    ),
 ) -> None:
     """Export the checkpoint to int8 + float16 TFLite; FAIL below 99% parity."""
     try:
@@ -113,29 +104,27 @@ def export_tflite_command(
     )
     typer.secho(f"parity report: {result.report_path}", fg=typer.colors.GREEN)
 
-    # Keep the Arduino library in step with what was just exported: the board embeds the
-    # flatbuffer + generated thresholds, so a new artifact that never reaches the library
-    # means a flashed device that disagrees with the export. `--out build/` (the default)
-    # is the real workflow; tests and ad-hoc exports opt in explicitly with --library.
-    wants_library = library or (not no_library and out.resolve() == Path("build").resolve())
-    if wants_library:
-        from . import esp32lib  # local import: keeps `ultron export` light
+    # The board embeds the flatbuffer + generated thresholds, so the Arduino library is
+    # refreshed and versioned on *every* export — there is no opt-out. An export that
+    # never reaches the library is a device that disagrees with the artifacts, which is
+    # the exact confusion this pipeline exists to prevent.
+    from . import esp32lib  # local import: keeps `ultron export` light
 
-        typer.echo("")
-        typer.secho("refreshing the UltronVoice Arduino library…", fg=typer.colors.CYAN)
-        try:
-            refreshed = esp32lib.refresh(model=result.int8_path, bump=True)
-        except esp32lib.Esp32LibError as exc:
-            typer.secho(f"error: {exc}", fg=typer.colors.RED)
-            typer.secho(
-                "error: the export succeeded but the library refresh failed — the board "
-                "would embed stale artifacts. Fix the library before flashing.",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(code=2) from exc
-        for line in refreshed.summary_lines():
-            typer.echo(line)
+    typer.echo("")
+    typer.secho("refreshing the UltronVoice Arduino library…", fg=typer.colors.CYAN)
+    try:
+        refreshed = esp32lib.refresh(model=result.int8_path, bump=True)
+    except esp32lib.Esp32LibError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED)
         typer.secho(
-            f"UltronVoice v{refreshed.version_after} ready — next: ./scripts/deploy_xiao.sh",
-            fg=typer.colors.GREEN,
+            "error: the export succeeded but the library refresh failed — the board "
+            "would embed stale artifacts. Fix the library before flashing.",
+            fg=typer.colors.RED,
         )
+        raise typer.Exit(code=2) from exc
+    for line in refreshed.summary_lines():
+        typer.echo(line)
+    typer.secho(
+        f"UltronVoice v{refreshed.version_after} ready — next: ./scripts/deploy_xiao.sh",
+        fg=typer.colors.GREEN,
+    )

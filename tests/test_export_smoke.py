@@ -362,7 +362,35 @@ def test_cli_export_deps_missing_exit_three(tmp_path, monkeypatch):
 
 
 @requires_conversion
-def test_cli_export_tflite_end_to_end(tmp_path):
+class _StubRefresh:
+    """Stand-in for esp32lib.refresh(): records the call, touches no files."""
+
+    version_after = "0.0.0-stub"
+
+    def summary_lines(self):
+        return ["UltronVoice v0.0.0-stub (stubbed in tests)"]
+
+
+@pytest.fixture
+def stub_library_refresh(monkeypatch):
+    """Export always refreshes the UltronVoice library; tests must not touch the repo copy.
+
+    The stub also *asserts the contract*: every successful `ultron export tflite` calls
+    esp32lib.refresh() exactly once with the int8 flatbuffer it just produced.
+    """
+    import ultron.esp32lib as esp32lib
+
+    calls: list = []
+
+    def _fake_refresh(*, model=None, placeholder=False, labels=None, bump=True):
+        calls.append({"model": model, "bump": bump})
+        return _StubRefresh()
+
+    monkeypatch.setattr(esp32lib, "refresh", _fake_refresh)
+    return calls
+
+
+def test_cli_export_tflite_end_to_end(tmp_path, stub_library_refresh):
     """`ultron export tflite` on a T8-format checkpoint + T7-format archive."""
     import torch
 
@@ -404,6 +432,9 @@ def test_cli_export_tflite_end_to_end(tmp_path):
     report = (out / "parity_report.md").read_text()
     assert "**Gate: PASS**" in report
     assert read_labels_json(out / "labels.json") == LABELS
+    # the library refresh is not optional: exactly one call, on this export's flatbuffer
+    assert len(stub_library_refresh) == 1, stub_library_refresh
+    assert stub_library_refresh[0]["model"] == out / "model_int8.tflite"
 
 
 @requires_conversion
@@ -424,7 +455,7 @@ def test_export_fails_when_checkpoint_disagrees_with_archive(tmp_path):
 
 
 @requires_conversion
-def test_export_gold_path_trained_model(tmp_path):
+def test_export_gold_path_trained_model(tmp_path, stub_library_refresh):
     """Full chain on real artifacts: fixtures → `ultron features` → `ultron
     train run` → `ultron export tflite` — the trained checkpoint passes the
     gate (T8's own smoke pattern, extended through T9)."""
@@ -493,3 +524,4 @@ def test_export_gold_path_trained_model(tmp_path):
     assert exported.exit_code == 0, exported.output
     assert read_labels_json(build / "labels.json") == LABELS
     assert "**Gate: PASS**" in (build / "parity_report.md").read_text()
+    assert len(stub_library_refresh) == 1, stub_library_refresh

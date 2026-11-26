@@ -173,19 +173,20 @@ functions keep one shared source of truth that every sketch can `#include` relat
 ## Artifacts → library version (one command)
 
 The board embeds a flatbuffer and a generated config, so "which firmware is this?" has to be
-answerable from the console. The CLI command refreshes the library and bumps its version:
+answerable from the console, and the library must never lag the model. There is **no separate
+command for that**: `ultron export tflite` always refreshes and versions the library (see below).
+
+The same refresh is available without an export — for a threshold-only change, or when the
+placeholder is what you want embedded — through the script that shares the implementation
+(`cli/src/ultron/esp32lib.py`):
 
 ```sh
-uv run ultron esp32 lib --check                 # stale? exit 1 (deploy_xiao.sh runs this)
-uv run ultron esp32 lib --sync                  # real model (build/model_int8.tflite)
-uv run ultron esp32 lib --sync --placeholder    # deterministic placeholder
-uv run ultron esp32 lib                         # version + path, no side effects
-uv run ultron esp32 lib --sync --no-bump        # refresh, keep the version
+uv run python scripts/gen_esp32_library.py --check                 # stale? exit 1 (deploy runs this)
+uv run python scripts/gen_esp32_library.py --placeholder           # embed the placeholder + bump
+uv run python scripts/gen_esp32_library.py --no-bump               # refresh, keep the version
 ```
 
-`uv run python scripts/gen_esp32_library.py [--check|--placeholder|--no-bump]` is the same
-function without typer — the implementation lives in `cli/src/ultron/esp32lib.py`, so the CLI,
-the script and `ultron export tflite` share one code path (no second implementation).
+`scripts/deploy_xiao.sh` runs `--check` before compiling, so a stale library cannot be flashed.
 
 It writes `src/mfcc.{c,h}` (byte-identical to `dsp/`), `src/ultron_config.h`, `src/model_data.h`
 and `library.properties`, with these bump rules:
@@ -202,10 +203,10 @@ The version is compiled in (`ULTRON_LIBRARY_VERSION`) and printed at boot:
 DBG boot fw=ultron_voice lib=0.1.1 task=T12 console_only=1 classes=4 cmds=2 window_ms=5000
 ```
 
-`ultron export tflite` runs the same refresh automatically when `--out` is the default `build/`
-(so a fresh export can never leave the board on stale artifacts), and `--library` / `--no-library`
-force or suppress it. `scripts/deploy_xiao.sh` runs `--check` before compiling and refuses to
-build firmware whose embedded artifacts disagree with `model/`.
+`ultron export tflite` **always** refreshes and versions the library — every export, whatever
+`--out` says, with no opt-out: an export can never leave the board on stale artifacts. Tests
+stub `esp32lib.refresh()` rather than weakening this guarantee. `scripts/deploy_xiao.sh` runs `--check`
+before compiling and refuses to build firmware whose embedded artifacts disagree with `model/`.
 
 ## Model
 

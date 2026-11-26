@@ -15,8 +15,6 @@ from rich.console import Console
 
 from .augment import AUGMENTED_DIR, DATASET_ROOT, ORIGINALS_DIR, plan_augmentations, run_plan
 from .config import config
-from . import esp32lib
-from .esp32lib import Esp32LibError
 from .export import export_app
 from .logging import logger, setup_logging
 from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
@@ -55,11 +53,6 @@ app.add_typer(synth_app, name="synth")
 app.add_typer(train_app, name="train")
 app.add_typer(export_app, name="export")
 
-esp32_app = typer.Typer(
-    name="esp32",
-    help="XIAO ESP32S3 firmware artifacts: the UltronVoice Arduino library (T12/T15).",
-)
-app.add_typer(esp32_app, name="esp32")
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
@@ -279,81 +272,6 @@ def features_command(
         typer.echo(f"  {label}: {n_clips} clips / {summary['rows_per_label'][label]} windows")
     typer.echo(f"split hash:    {summary['split_hash']}")
     typer.echo(f"archive sha256: {summary['sha256']} ({summary['bytes']} bytes)")
-
-
-@esp32_app.command(name="lib")
-def esp32_lib(
-    sync: bool = typer.Option(
-        False,
-        "--sync",
-        help="Rewrite the library from model/ (mfcc copies, ultron_config.h, model_data.h) "
-        "and bump library.properties when anything changed.",
-    ),
-    check: bool = typer.Option(
-        False,
-        "--check",
-        help="Verify only: exit 1 when the committed library is stale (what deploy_xiao.sh runs).",
-    ),
-    placeholder: bool = typer.Option(
-        False, "--placeholder", help="Use the deterministic placeholder flatbuffer (no trained model)."
-    ),
-    model: Optional[Path] = typer.Option(
-        None, "--model", "-m", help="Flatbuffer to embed (default: build/model_int8.tflite, or "
-        "the placeholder with --placeholder)."
-    ),
-    labels: Optional[Path] = typer.Option(
-        None, "--labels", help="Frozen class order (build/labels.json); default: derive."
-    ),
-    bump: bool = typer.Option(
-        True, "--bump/--no-bump", help="Bump the version when artifacts change (default: bump)."
-    ),
-) -> None:
-    """Refresh or verify the UltronVoice Arduino library (the model the board embeds).
-
-    Syncing is idempotent: nothing changed → no bump and no writes. Bump rules:
-    config/model bytes → patch, frozen class order → minor.
-    """
-    if not (sync or check):
-        typer.echo(
-            f"UltronVoice v{esp32lib.read_version()} @ {esp32lib.LIB_DIR}\n"
-            "  --check  verify against model/ (exit 1 when stale)\n"
-            "  --sync   rewrite the library and bump the version"
-        )
-        return
-
-    try:
-        if check:
-            ok, problems, notes = esp32lib.check(
-                model=model, placeholder=placeholder, labels=labels
-            )
-            for note in notes:
-                typer.secho(f"note: {note}", fg=typer.colors.YELLOW)
-            if not ok:
-                typer.secho(
-                    f"UltronVoice is STALE ({', '.join(problems)}) — run "
-                    "`uv run ultron esp32 lib --sync`",
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(code=1)
-            typer.secho(
-                f"UltronVoice v{esp32lib.read_version()} matches model/ (no drift)",
-                fg=typer.colors.GREEN,
-            )
-            return
-
-        result = esp32lib.refresh(
-            model=model, placeholder=placeholder, labels=labels, bump=bump
-        )
-        for line in result.summary_lines():
-            typer.echo(line)
-        if result.bumped:
-            typer.secho(
-                f"bumped to v{result.version_after} — next: ./scripts/deploy_xiao.sh",
-                fg=typer.colors.GREEN,
-            )
-    except Esp32LibError as exc:
-        typer.secho(f"error: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(code=2) from exc
 
 
 @app.command(name="config")
