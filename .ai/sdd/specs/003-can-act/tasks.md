@@ -114,7 +114,7 @@ is off the path — it runs once the hardware is live.
 
 ### T14 — Audio feedback: "Escuchando" + "comando" (2 h)
 - Covers: FR-018, FR-019, FR-037, NFR-010, US-007. Deps: T12. Priority: Must.
-- Checklist: render + commit `assets/escuchando.wav` (Spanish TTS, 16 k/16-bit/mono, ≤ 500 ms,
+- [x] Checklist: render + commit `assets/escuchando.wav` (Spanish TTS, 16 k/16-bit/mono, ≤ 500 ms,
   silence-trimmed) and `assets/comando.wav` (Spanish TTS word or short tone, ≤ 300 ms); reuse the
   **hardware-validated I2S path** from `spike_audio` (D2/D3/D4, GAIN/SD floating, amp VIN on
   VBUS 5 V; static ≤ 4 KB chunks); wire it into the `CONFIRMING` state and the playback-overlap
