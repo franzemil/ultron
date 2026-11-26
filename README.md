@@ -1,10 +1,10 @@
 # ultron
 
 Voice-actuation **car manager**: says **"hey ultron"** to wake it, then a Spanish command
-(*"enciende guiñador derecho"*, *"arranque"*, …) drives 9 relay channels. Runs the **same
-PyTorch → TFLite pipeline** on two
-candidate devices — **XIAO ESP32S3 Sense** and **Orange Pi Zero 2W** — and a benchmark picks the
-winner. Successor to [`lampara-aliz`](../lampara-aliz) (Edge Impulse-based); this project trains
+(*"enciende guiñador derecho"*, *"arranque"*, …) drives 9 relay channels. It runs on a
+**single target — the XIAO ESP32S3 Sense** — through a PyTorch → TFLite-Micro pipeline
+(owner decision 2026-11-26: the Orange Pi Zero 2W is out of scope and its code is removed).
+Successor to [`lampara-aliz`](../lampara-aliz) (Edge Impulse-based); this project trains
 locally with **PyTorch as source of truth**, Edge Impulse is export-only.
 
 ## Status

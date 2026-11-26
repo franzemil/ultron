@@ -42,7 +42,7 @@ devices; a benchmark (spec 004) decides which one ships.
   2 s analysis window.
 - Primary speaker: the owner. Primary room: the deployment room. Mics: XIAO built-in PDM; Pi
   owner-supplied USB microphone.
-- Devices: Seeed XIAO ESP32S3 Sense vs Orange Pi Zero 2W — one pipeline deployed to both; the
+- Device: Seeed XIAO ESP32S3 Sense — **single target since 2026-11-26** (the Orange Pi Zero 2W was the
   benchmark decides the winner (D-001).
 - PyTorch is the source of truth; Edge Impulse is one-way export/archive (D-003).
 - Reproducibility (NFR-006): any reported result reproducible from seed (42) + dataset counts +

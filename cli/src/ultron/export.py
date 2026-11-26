@@ -96,11 +96,9 @@ def export_tflite_command(
         f"   XIAO flash (NFR-002 budget <= {format_bytes(100 * 1024)}):"
         f" {'PASS' if result.int8_within_budget else 'OVER BUDGET'}"
     )
-    typer.echo(f"model_fp16.tflite {format_bytes(result.fp16_bytes):>8}   Orange Pi")
     typer.echo(
         f"parity: int8 {result.int8_agreement:.2%} (gate >= {result.threshold:.2%} "
-        f"{'PASS' if result.gate_passed else 'FAIL'}), "
-        f"fp16 {result.fp16_agreement:.2%} over {result.n_parity} samples"
+        f"{'PASS' if result.gate_passed else 'FAIL'}) over {result.n_parity} samples"
     )
     typer.secho(f"parity report: {result.report_path}", fg=typer.colors.GREEN)
 

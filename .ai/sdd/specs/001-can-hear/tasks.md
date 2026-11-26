@@ -64,9 +64,9 @@ criteria before the next begins.
 ### T4 — Recorders for both devices (4 h) ✅
 - Covers: US-002, NFR-005. Deps: T2. Priority: Must.
 - [x] Checklist: port `wav_recorder` sketch from lampara-aliz (PSRAM=opi, serial `rec {label}`);
-  Pi recorder script (`devices/orangepi/record.py`, sounddevice, 16 k/16-bit/mono, label arg);
+  ~~Pi recorder script (`devices/orangepi/record.py`, …)~~ — withdrawn 2026-11-26;
   docs.
-- Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `devices/orangepi/record.py`,
+- Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`,
   `docs/recording.md`.
 - Verify: XIAO records a 5 s WAV to SD (DONE response); Pi recorder writes a valid WAV
   (`ultron dataset validate` passes it). **Deferred (D-012):** this on-device verify is optional

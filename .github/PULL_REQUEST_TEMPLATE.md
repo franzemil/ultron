@@ -16,5 +16,5 @@
 ## Checklist
 
 - [ ] Spec `.status` respected — no implementation before `tasks:approved`
-- [ ] Both targets stay behavior-identical (XIAO + Orange Pi)
+- [ ] Single target (XIAO ESP32S3): no Pi/orangepi code paths reintroduced
 - [ ] Docs updated if commands or behaviors changed

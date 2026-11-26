@@ -61,7 +61,7 @@ point. Entries are written for trained commands only (FR-032).
 2. `onnx2tf` → float TFLite (TensorFlow is a build-time-only dependency)
 3. Quantize: **full-int8** (`TFLITE_BUILTINS_INT8`, int8 in/out) with training features as the
    representative dataset → `build/model_int8.tflite` (XIAO)
-4. **float16** → `build/model_fp16.tflite` (Pi); int8 also offered for the Pi
+4. ~~**float16** → `build/model_fp16.tflite` (Pi)~~ — withdrawn 2026-11-26 (single target: int8 only)
 5. **Parity report** (`build/parity_report.md`): PyTorch vs int8 argmax agreement on the val
    split — must be ≥ 99% or the export **fails** (FR-011, NFR-007)
 6. Label order (trained subset only, FR-032) echoed into the report and into `build/labels.json`

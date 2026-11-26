@@ -76,7 +76,7 @@ void loop() {
 **The relay layer is not in this sketch and must not be.** FR-009 / FR-017 / NFR-009 belong to
 **T15** (PR #40): `devices/esp32/ultron_voice/outputs.{h,cpp}` implements all seven Actuation
 Behavior Contract behaviours behind a `ChannelSink` (reusable by spec 006's companion and spec
-005's Pi), and `pins.h` owns the pin map with a wired/unwired flag per channel. The sketch's
+005), and `pins.h` owns the pin map with a wired/unwired flag per channel. The sketch's
 `onCommand()` is the seam where that engine is constructed over the real GPIOs — one source of
 truth for the channel contract, no second pin table, no second luz hierarchy.
 

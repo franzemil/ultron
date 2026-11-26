@@ -1,7 +1,7 @@
 # Tasks — 003 Can Act (Milestone 3, XIAO-only)
 
 **Scope (owner decisions 2026-11-21):** XIAO only. The companion ESP32-S3 SuperMini stack and
-the per-command rollout live in **spec 006-can-act-full**; the Orange Pi runtime and cross-target
+the per-command rollout live in **spec 006-can-act-full**; the Orange Pi runtime and cross-target parity are withdrawn (owner, 2026-11-26). Historical wording:
 parity live in **spec 005** (final phase). This milestone drives **2 relay channels directly
 from the XIAO** (LM, LB) for the minimal trained command set (`la`, `lb`).
 
@@ -152,7 +152,7 @@ is off the path — it runs once the hardware is live.
 - Likely files: `devices/esp32/wav_recorder/wav_recorder.ino`, `docs/recording.md`.
 - Verify: device-recorded WAVs pass `ultron dataset validate` (US-002 AC3); the XIAO writes
   phrase-labeled WAVs (US-002 AC1); MFCC parity is green on features from real recordings; clips
-  are tagged with their mic source. *(The Pi recorder half of US-002 is in spec 005.)*
+  are tagged with their mic source. *(The Pi recorder half of US-002 was withdrawn with the Pi target, 2026-11-26.)*
 
 ## Traceability note
 

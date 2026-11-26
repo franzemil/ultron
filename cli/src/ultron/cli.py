@@ -18,7 +18,15 @@ from .config import config
 from .esp32_commands import esp32_app
 from .export import export_app
 from .logging import logger, setup_logging
-from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
+from ultron.dataset import (
+    REGISTRY_IDS,
+    dc_fix,
+    export_zip,
+    import_zip,
+    ingest,
+    retag_pi,
+    validate,
+)
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
@@ -207,6 +215,21 @@ def dataset_dcfix(
 ) -> None:
     """Remove DC offset from every WAV under <path> (recenter waveform around zero)."""
     dc_fix(path=path)
+
+
+@dataset.command(name="retag-pi")
+def dataset_retag_pi(
+    path: str = typer.Argument("dataset", help="Dataset directory to migrate."),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually rename (default: dry run, prints what would change)."
+    ),
+) -> None:
+    """Rename legacy *_pi_*.wav recordings to the 'ext' mic tag (Pi recorder retired)."""
+    stats = retag_pi(path, apply=apply)
+    verb = "renamed" if apply else "would rename"
+    typer.echo(f"{verb} {stats['renamed']} file(s); {stats['skipped']} skipped (target exists)")
+    if not apply and stats["renamed"]:
+        typer.echo("re-run with --apply to commit the renames")
 
 
 @dataset.command(name="export")
