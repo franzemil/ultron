@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Generate ``devices/esp32/ultron_voice/config.h`` from the model metadata.
+"""Generate ``devices/esp32/libraries/UltronVoice/src/ultron_config.h`` from the model
+metadata.
 
-Task: spec 003-can-act **T12** ("Thresholds + registry injected at build into a
-generated header"). Nothing about the operating point may be
-hardcoded in C: the thresholds come from ``model/thresholds.json`` (spec 002
+Task: spec 003-can-act **T12** ("Thresholds + registry injected at build into the
+generated header") and **T15** (the same header carries the *whole* registry, so the
+output controller resolves command → behaviour → channels from the generated table
+instead of a second hand-written copy in C). Nothing about the operating point may
+be hardcoded in C: the thresholds come from ``model/thresholds.json`` (spec 002
 Q-006) and the command identity (id, sigla, behavior, channels) from
 ``model/registry.json`` (spec 001 T3).
 
@@ -219,6 +222,33 @@ def render(
         w(f"        {class_order.index(cid)},")
         w(f"        {_float(gate['threshold'])},")
         w(f"        {_float(gate['margin'])},")
+        w(f"        {_c_string(entry.get('behavior', ''))},")
+        w(f"        {_c_string(channels)},")
+        w("    },")
+    w("};")
+    w("")
+    w("/* Full registry (model/registry.json) — the output controller's command table")
+    w(" * (spec 003 T15). The engine resolves every CMD id through this table, including")
+    w(" * commands the current model does not recognise yet (spec 006 rollout), so the")
+    w(" * behaviour mapping is never duplicated in C. `channels` is a CSV of registry")
+    w(" * channel ids; `behavior` is the registry enum:")
+    w(" *   steady | blink_45s | blink_until_cancel | cancel | motor | pulse_2s | pulse_05s")
+    w(" */")
+    registry_ids = [str(cmd["id"]) for cmd in registry["commands"]]
+    w(f"#define ULTRON_REGISTRY_SIZE {len(registry_ids)}")
+    w("typedef struct {")
+    w("  const char *id;       /* registry id — matches EVT CMD id=<id>           */")
+    w("  const char *sigla;    /* Actuation Behavior Contract sigla               */")
+    w("  const char *behavior; /* registry behavior enum (see above)              */")
+    w("  const char *channels; /* registry channel ids, CSV (empty = drives none) */")
+    w("} ultron_registry_entry;")
+    w("static const ultron_registry_entry ULTRON_REGISTRY[ULTRON_REGISTRY_SIZE] = {")
+    for cid in registry_ids:
+        entry = registry_by_id[cid]
+        channels = ",".join(str(ch) for ch in entry.get("channels", []))
+        w("    {")
+        w(f"        {_c_string(cid)},")
+        w(f"        {_c_string(entry.get('sigla', cid.upper()))},")
         w(f"        {_c_string(entry.get('behavior', ''))},")
         w(f"        {_c_string(channels)},")
         w("    },")

@@ -65,4 +65,87 @@ static const struct {
     },
 };
 
+/* Full registry (model/registry.json) — the output controller's command table
+ * (spec 003 T15). The engine resolves every CMD id through this table, including
+ * commands the current model does not recognise yet (spec 006 rollout), so the
+ * behaviour mapping is never duplicated in C. `channels` is a CSV of registry
+ * channel ids; `behavior` is the registry enum:
+ *   steady | blink_45s | blink_until_cancel | cancel | motor | pulse_2s | pulse_05s
+ */
+#define ULTRON_REGISTRY_SIZE 11
+typedef struct {
+  const char *id;       /* registry id — matches EVT CMD id=<id>           */
+  const char *sigla;    /* Actuation Behavior Contract sigla               */
+  const char *behavior; /* registry behavior enum (see above)              */
+  const char *channels; /* registry channel ids, CSV (empty = drives none) */
+} ultron_registry_entry;
+static const ultron_registry_entry ULTRON_REGISTRY[ULTRON_REGISTRY_SIZE] = {
+    {
+        "lm",
+        "LM",
+        "steady",
+        "lm",
+    },
+    {
+        "lb",
+        "LB",
+        "steady",
+        "lb",
+    },
+    {
+        "la",
+        "LA",
+        "steady",
+        "la,lb,lm",
+    },
+    {
+        "gd",
+        "GD",
+        "blink_45s",
+        "gd",
+    },
+    {
+        "gi",
+        "GI",
+        "blink_45s",
+        "gi",
+    },
+    {
+        "p",
+        "P",
+        "blink_until_cancel",
+        "gd,gi",
+    },
+    {
+        "cp",
+        "CP",
+        "cancel",
+        "",
+    },
+    {
+        "lpb",
+        "LPB",
+        "motor",
+        "lpb",
+    },
+    {
+        "lpa",
+        "LPA",
+        "motor",
+        "lpa",
+    },
+    {
+        "a",
+        "A",
+        "pulse_2s",
+        "a",
+    },
+    {
+        "cc",
+        "CC",
+        "pulse_05s",
+        "cc",
+    },
+};
+
 #endif /* ULTRON_CONFIG_H */
