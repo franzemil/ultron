@@ -131,16 +131,33 @@ run() {
 BUILD_PROP=""
 [[ "$SELFTEST" == "1" ]] && BUILD_PROP="--build-property=compiler.cpp.extra_flags=-DULTRON_SELFTEST=1"
 
+# Compile artefacts are written here and handed straight to `upload --input-dir`.
+# Why: `arduino-cli upload` has no --libraries flag (only compile does) — it would
+# recompile without the UltronVoice library path and fail with "unknown flag" or
+# "library not found". Compiling to a fixed dir and uploading from it keeps the
+# upload a pure flash step, with the build properties exactly as compiled.
+# NB: never put a `[[ … ]] && echo …` substitution inside an assignment — when the
+# test is false the substitution returns 1, the assignment inherits that status and
+# `set -e` kills the script silently (this bit the capture stage before).
+BUILD_SUFFIX=""
+if [[ "$SELFTEST" == "1" ]]; then BUILD_SUFFIX="-selftest"; fi
+BUILD_DIR="${LOG_DIR}/../ultron-xiao-build${BUILD_SUFFIX}"
+
 if [[ "$SKIP_COMPILE" == "1" ]]; then
-  log "compile: skipped (--skip-compile)"
+  if [[ "$DRY_RUN" != "1" && ! -d "$BUILD_DIR" ]]; then
+    die "--skip-compile needs a previous build in ${BUILD_DIR} (run once without it)" 2
+  fi
+  log "compile: skipped (--skip-compile) — uploading ${BUILD_DIR}"
 else
   LABEL=""
   if [[ "$SELFTEST" == "1" ]]; then LABEL=" [selftest]"; fi
   log "compile ${FQBN}${LABEL}"
   if [[ "$DRY_RUN" == "1" ]]; then
-    run arduino-cli compile --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH"
+    run arduino-cli compile --libraries "$LIBRARIES" --output-dir "$BUILD_DIR" \
+      --fqbn "$FQBN" $BUILD_PROP "$SKETCH"
   else
-    COMPILE_OUT="$(arduino-cli compile --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH" 2>&1)" || {
+    COMPILE_OUT="$(arduino-cli compile --libraries "$LIBRARIES" --output-dir "$BUILD_DIR" \
+      --fqbn "$FQBN" $BUILD_PROP "$SKETCH" 2>&1)" || {
       printf '%s\n' "$COMPILE_OUT" >&2
       die "compile failed — nothing was flashed" 3
     }
@@ -176,7 +193,9 @@ fi
 
 # ── 3. upload ───────────────────────────────────────────────────────────────
 log "flash → ${PORT}"
-if ! run arduino-cli upload -p "$PORT" --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH"; then
+# `upload --input-dir` flashes the artefacts compiled above verbatim (no recompile,
+# no library resolution at upload time — arduino-cli upload has no --libraries).
+if ! run arduino-cli upload -p "$PORT" --fqbn "$FQBN" --input-dir "$BUILD_DIR"; then
   die "upload failed. If esptool says 'No serial data received', the chip is hung:
    physical reset required. Do not retry in a loop." 4
 fi
