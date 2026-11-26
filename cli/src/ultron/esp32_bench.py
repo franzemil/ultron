@@ -15,10 +15,10 @@ It reads the XIAO console, and every time an `EVT WAKE` line appears it plays "E
 TWO WAYS TO USE IT
 ------------------
     # 1. No device needed: press Enter = "I just said hey ultron"
-    python3 scripts/wake_feedback_test.py --simulate
+    uv run ultron esp32 bench --simulate
 
     # 2. Against the board (device must be alive):
-    python3 scripts/wake_feedback_test.py --port /dev/cu.usbmodem2101
+    uv run ultron esp32 bench --port /dev/cu.usbmodem2101
 
 READ THIS BEFORE BLAMING THE SCRIPT
 -----------------------------------
@@ -28,7 +28,7 @@ ultron" as `wake`, so on the production build you will hear **nothing** no matte
 clearly you speak — that is the model, not the audio path. To exercise the chain on real
 hardware, flash the scripted-score build, which emits a real `EVT WAKE` line:
 
-    ./scripts/deploy_xiao.sh --selftest --listen 60
+    uv run ultron esp32 deploy --selftest --listen 60
 
 Then this script will speak "Escuchando" on every scripted wake. Once a real
 `model_int8.tflite` lands, the same script works unchanged with your voice.
@@ -47,10 +47,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-
-from serial_log import DEFAULT_BAUD, DEFAULT_PORT, open_console  # noqa: E402
+from .esp32_console import DEFAULT_BAUD, DEFAULT_PORT, open_console
 
 CACHE_DIR = Path("/tmp/ultron-wake-feedback")
 DEFAULT_TEXT = "Escuchando"

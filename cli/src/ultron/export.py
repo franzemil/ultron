@@ -125,6 +125,6 @@ def export_tflite_command(
     for line in refreshed.summary_lines():
         typer.echo(line)
     typer.secho(
-        f"UltronVoice v{refreshed.version_after} ready — next: ./scripts/deploy_xiao.sh",
+        f"UltronVoice v{refreshed.version_after} ready — next: uv run ultron esp32 deploy",
         fg=typer.colors.GREEN,
     )

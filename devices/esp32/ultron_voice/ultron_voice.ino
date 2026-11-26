@@ -19,7 +19,7 @@
  *   T14 (#41)   : audio feedback — set Options.wakeClipMs / commandClipMs and play the clip
  *                 on the Wake/Command events (the library already owns the overlap timing).
  *
- * Build/flash: ./scripts/deploy_xiao.sh [--selftest] [--listen 45]
+ * Build/flash: uv run ultron esp32 deploy [--selftest] [--listen 45]
  * Expected console: boot banner, then `DBG pred=…` every 500 ms, and `EVT …` lines when a
  * gate is crossed. With the placeholder model no `EVT` line can appear (see PR #38).
  */

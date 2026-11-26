@@ -4,7 +4,7 @@
  * Embedded TFLite-Micro flatbuffer for devices/esp32/ultron_voice (T12).
  * Regenerate with:
  *
- *     uv run python scripts/gen_esp32_model.py
+ *     uv run ultron esp32 model
  *
  * model        : build/placeholder/model_int8.tflite
  * model sha256 : a626d6167dc2c8118e3ca7420a070328bf0faa4538a2c03d71880b51fab728da

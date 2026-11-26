@@ -35,7 +35,7 @@ ESP32_DIR = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src"  # the UltronV
 DRIVER = REPO_ROOT / "tests/esp32/features_host_test.c"
 # ultron_features_core.c includes mfcc.h; the vendored mfcc.c next to it is compiled
 # here as its own unit (that is exactly how the Arduino library build links it), and
-# scripts/sync_ultronvoice.py keeps it byte-identical to dsp/mfcc.c.
+# esp32lib.sync_vendored_sources() keeps it byte-identical to dsp/mfcc.c.
 SOURCES = [ESP32_DIR / "ultron_features_core.c", ESP32_DIR / "mfcc.c"]
 
 SAMPLE_RATE = 16000

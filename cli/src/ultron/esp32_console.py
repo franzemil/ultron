@@ -9,15 +9,15 @@ the same port used to flash. Take the shared device lock before reading (macOS h
 no ``flock``; ``lockf`` has no ``-c``, so wrap a shell):
 
     lockf -k /tmp/ultron-xiao.lock /bin/sh -c \
-      'python3 scripts/serial_log.py --port /dev/cu.usbmodem2101 --seconds 40'
+      'uv run ultron esp32 console --port /dev/cu.usbmodem2101 --seconds 40'
 
 A silent port is a hardware fault (hung chip), not an empty room: this script says so
 explicitly and exits non-zero, so callers never mistake "no bytes" for "no events".
 
 Usage:
-    python3 scripts/serial_log.py                     # 30 s, EVT+DBG, all lines
-    python3 scripts/serial_log.py --seconds 15 --evt-only
-    python3 scripts/serial_log.py --raw               # no timestamps, for > file.log
+    uv run ultron esp32 console                     # 30 s, EVT+DBG, all lines
+    uv run ultron esp32 console --seconds 15 --evt-only
+    uv run ultron esp32 console --raw               # no timestamps, for > file.log
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ import datetime as dt
 import os
 import sys
 import termios
+from pathlib import Path
 import time
 
 DEFAULT_PORT = "/dev/cu.usbmodem2101"
@@ -68,15 +69,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print nothing but exit code (health check: did the chip say anything?)",
     )
+    parser.add_argument(
+        "--log", type=Path, default=None, help="also write the raw lines to this file"
+    )
     args = parser.parse_args(argv)
 
     if not os.path.exists(args.port):
-        print(f"serial_log: {args.port} does not exist (board unplugged?)", file=sys.stderr)
+        print(f"esp32 console: {args.port} does not exist (board unplugged?)", file=sys.stderr)
         return 2
     try:
         fd = open_console(args.port, args.baud)
     except OSError as exc:
-        print(f"serial_log: cannot open {args.port}: {exc}", file=sys.stderr)
+        print(f"esp32 console: cannot open {args.port}: {exc}", file=sys.stderr)
         return 2
 
     t0 = time.time()
@@ -85,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     bytes_seen = 0
     lines = 0
     evt_lines = 0
+    collected: list[str] = []
     reopens = 0
 
     try:
@@ -130,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 if args.quiet:
                     continue
+                collected.append(text)
                 if args.raw:
                     print(text, flush=True)
                 else:
@@ -140,15 +146,18 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         os.close(fd)
 
+    if args.log is not None:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        args.log.write_text("\n".join(collected) + ("\n" if collected else ""), encoding="utf-8")
     if not args.quiet:
         print(
-            f"serial_log: {lines} line(s), {evt_lines} EVT, {bytes_seen} byte(s) in "
+            f"esp32 console: {lines} line(s), {evt_lines} EVT, {bytes_seen} byte(s) in "
             f"{time.time() - t0:.1f}s",
             file=sys.stderr,
         )
     if bytes_seen == 0:
         print(
-            "serial_log: ZERO bytes — the port enumerated but the chip said nothing. "
+            "esp32 console: ZERO bytes — the port enumerated but the chip said nothing. "
             "That is a hung/absent device (needs a physical reset), not an empty log; "
             "do NOT retry uploads in a loop.",
             file=sys.stderr,

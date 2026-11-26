@@ -31,11 +31,11 @@ Outputs (all under build/, gitignored):
 
 Then embed it in the firmware:
 
-    uv run python scripts/gen_esp32_model.py --placeholder
+    uv run ultron esp32 model --placeholder
 
 Usage:
     uv sync --extra export               # onnx2tf / tensorflow (heavy, one-off)
-    uv run python scripts/gen_esp32_placeholder.py
+    uv run ultron esp32 placeholder
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]  # repo root (cli/src/ultron/)
 DEFAULT_OUT = REPO_ROOT / "build/placeholder"
 DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 
@@ -68,7 +68,7 @@ def read_config_classes(config_path: Path) -> list[str]:
 
     if not config_path.is_file():
         raise PlaceholderError(
-            f"{config_path} not found — run `uv run python scripts/gen_esp32_config.py` first"
+            f"{config_path} not found — run `uv run ultron esp32 config` first"
         )
     text = config_path.read_text(encoding="utf-8")
     match = re.search(r"ULTRON_CLASS_NAMES\[[^\]]*\]\s*=\s*\{([^}]*)\}", text)
@@ -172,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  gate (≥ 99 %)     : {'PASS' if result.gate_passed else 'FAIL'}")
     print(f"  artifacts         : {args.out}")
     print(
-        "  next              : uv run python scripts/gen_esp32_model.py --placeholder"
+        "  next              : uv run ultron esp32 model --placeholder"
     )
     print(
         "  note              : parity here compares torch vs int8 on SYNTHETIC rows — "
