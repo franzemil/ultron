@@ -1,78 +1,61 @@
 /*
- * ultron_voice — application sketch: recognised commands drive the relay outputs.
- * Seeed XIAO ESP32S3 Sense · spec 003-can-act (T12 firmware core + the relay logic).
+ * ultron_voice — application sketch (T12: console-only firmware core).
+ * Seeed XIAO ESP32S3 Sense · spec 003-can-act.
  *
  * Everything voice-related lives in the **UltronVoice** library
  * (devices/esp32/libraries/UltronVoice): PDM capture, MFCC, TFLite-Micro, thresholds,
- * the WAKE_LISTEN/CONFIRMING/LISTENING machine and the Target Event Contract lines.
- * This file is only the part a human should read: what happens when a command is
- * recognised.
+ * the WAKE_LISTEN/CONFIRMING/LISTENING machine and the Target Event Contract lines
+ * (`EVT WAKE / CMD / TIMEOUT / ERROR` + one `DBG pred=` line per window).
  *
- * Wiring (design.md → "Relay hardware"; active-LOW board, pull-ups to 3V3, coils on
- * external 5 V so the channels are OFF at boot — NFR-009):
+ * This file is app glue only — it must not grow a voice pipeline, a pin map or a
+ * channel contract:
  *
- *   D5 (GPIO6) ──► relay IN1 ──► LM  (luz media)
- *   D8 (GPIO7) ──► relay IN2 ──► LB  (luz baja)
- *   LA is not wired in this milestone — `la` drives LB+LM and says so in the log.
- *
- * Luz hierarchy (Actuation Behavior Contract): lm → LM; lb → LM+LB; la → LM+LB (+LA
- * in spec 006). A luz command replaces the previous luz state; every other trained
- * command is a no-op here until its channel exists (spec 006 rollout).
+ *   T12 (here)  : bring the library up, pump poll(), hand events to the app hooks.
+ *   T15 (#40)   : the relay layer — devices/esp32/ultron_voice/outputs.{h,cpp}
+ *                 (all seven Actuation Behavior Contract behaviours behind a ChannelSink)
+ *                 and pins.h (the pin map, with wired/unwired per channel). Those are the
+ *                 single source of truth for FR-009 / FR-017 / NFR-009; wire them into
+ *                 onCommand() below and forward the engine's DBG lines to voice.console().
+ *   T14 (#41)   : audio feedback — set Options.wakeClipMs / commandClipMs and play the clip
+ *                 on the Wake/Command events (the library already owns the overlap timing).
  *
  * Build/flash: ./scripts/deploy_xiao.sh [--selftest] [--listen 45]
- * Console: `EVT CMD id=lb conf=0.91 t_ms=…` then the `DBG out=… state=on` lines.
+ * Expected console: boot banner, then `DBG pred=…` every 500 ms, and `EVT …` lines when a
+ * gate is crossed. With the placeholder model no `EVT` line can appear (see PR #38).
  */
 
-#include <UltronVoice.h>
 #include <Arduino.h>
+
+#include <UltronVoice.h>
 
 namespace {
 
-/* Relay channels — active-LOW: LOW energises the coil. */
-constexpr uint8_t kRelayLm = 6; /* D5 */
-constexpr uint8_t kRelayLb = 7; /* D8 */
-
 UltronVoice voice;
 
-/* Luz state: which channels the current luz command wants ON. */
-struct LuzState {
-  bool lm = false;
-  bool lb = false;
-};
+/* ── application hooks ───────────────────────────────────────────────────────
+ * Deliberately empty in T12: this build has no outputs at all (console-only). They
+ * exist so the downstream layers have exactly one place to plug in and this file
+ * never needs to learn about relays, pins or clips.
+ * ------------------------------------------------------------------------- */
 
-void writeChannel(const char *id, uint8_t pin, bool on) {
-  digitalWrite(pin, on ? LOW : HIGH);
-  char line[64];
-  snprintf(line, sizeof(line), "DBG out=%s state=%s t_ms=%lu", id, on ? "on" : "off",
-           (unsigned long)millis());
-  voice.console().println(line);
+/* T15 seam — relay layer (FR-009 / FR-017 / NFR-009). Do not implement it here:
+ * construct T15's channel sink over the GPIOs from pins.h, call its engine with
+ * `ev.id`, and forward the engine's `DBG out=` lines to voice.console(). */
+void onCommand(const UltronVoice::Event &ev) {
+  (void)ev;
 }
 
-void applyLuz(const LuzState &next) {
-  static LuzState current; /* controller memory; all channels are OFF at boot */
-  if (next.lm != current.lm) writeChannel("lm", kRelayLm, next.lm);
-  if (next.lb != current.lb) writeChannel("lb", kRelayLb, next.lb);
-  current = next;
-  if (next.lm && next.lb) {
-    /* `la` also wants LA, which does not exist until spec 006. Say it out loud. */
-    voice.console().println("DBG out=la state=unwired");
-  }
-}
-
-void allOff() {
-  digitalWrite(kRelayLm, HIGH);
-  digitalWrite(kRelayLb, HIGH);
+/* T14 seam — audio feedback (FR-018 / FR-019 / FR-037 / NFR-010). Play the fixed
+ * clip here; the library has already armed the playback interval on the same edge. */
+void onWake(const UltronVoice::Event &ev) {
+  (void)ev;
 }
 
 }  // namespace
 
 void setup() {
-  /* NFR-009: outputs OFF before anything else can take time. */
-  pinMode(kRelayLm, OUTPUT);
-  pinMode(kRelayLb, OUTPUT);
-  allOff();
-
   Serial.begin(115200);
+  /* Give the host ~2 s to attach, but never block boot on it (headless OK). */
   const uint32_t t0 = millis();
   while (!Serial && (millis() - t0) < 2000) {
     delay(10);
@@ -80,15 +63,9 @@ void setup() {
 
   UltronVoice::Options options;
 #ifdef ULTRON_SELFTEST
-  options.selftest = true; /* scripted scores: event contract proof, not recognition */
+  options.selftest = true; /* scripted scores: proves the contract, never recognition */
 #endif
-  /* Audio feedback is T14; when that library layer lands the app sets the clip
-   * lengths here (wakeClipMs = 500, commandClipMs = 300) and plays the audio on the
-   * Wake/Command events below. The library already owns the timing bookkeeping. */
-  options.wakeClipMs = 0;
-  options.commandClipMs = 0;
-
-  voice.begin(options);
+  voice.begin(options); /* prints the boot banner; EVT ERROR + halt on any fault */
 }
 
 void loop() {
@@ -97,34 +74,17 @@ void loop() {
 
   switch (ev.type) {
     case UltronVoice::Type::Wake:
-      /* Wake accepted — the command window is open. Nothing to actuate yet: no
-       * channel ever toggles without a command event (NFR-009). */
+      onWake(ev);
       break;
-
     case UltronVoice::Type::Command:
-      if (ev.id == nullptr) break;
-      if (strcmp(ev.id, "lm") == 0) {
-        applyLuz({true, false});
-      } else if (strcmp(ev.id, "lb") == 0) {
-        applyLuz({true, true});
-      } else if (strcmp(ev.id, "la") == 0) {
-        applyLuz({true, true});
-      } else {
-        /* Trained later (spec 006 rollout): gd, gi, p, cp, lpb, lpa, a, cc. */
-        char line[80];
-        snprintf(line, sizeof(line), "DBG out=%s state=unwired t_ms=%lu", ev.id,
-                 (unsigned long)millis());
-        voice.console().println(line);
-      }
+      onCommand(ev);
       break;
-
     case UltronVoice::Type::Timeout:
-      /* Command window closed with nothing recognised: luz state stays as it is. */
+      /* Window closed with nothing recognised; the luz state (T15) stays as it is. */
       break;
-
     case UltronVoice::Type::Error:
-      /* Fail loud and safe: a fault must never leave a channel energised. */
-      allOff();
+      /* The library already printed the EVT ERROR line and halted. Outputs are T15's:
+       * they must fail safe there (all channels OFF), not in this file. */
       break;
   }
 }

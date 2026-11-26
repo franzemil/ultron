@@ -4,7 +4,8 @@ Everything the XIAO runs to turn "hey ultron" + a command phrase into console ev
 without audio output and without relays. Audio feedback is T14, the 2 relay channels are
 T15, and both are built on top of this tree.
 
-- Sketch: `devices/esp32/ultron_voice/ultron_voice.ino` — **application logic only** (relays)
+- Sketch: `devices/esp32/ultron_voice/ultron_voice.ino` — **app glue only**: bring the library up,
+  pump `poll()`, hand events to the app hooks (no pin map, no channel contract)
 - Library: `devices/esp32/libraries/UltronVoice/` — the whole voice pipeline
 - Shared PDM capture: `libraries/UltronVoice/src/pdm_capture.h` (T14/T28 reuse it; the old
   `devices/esp32/common/pdm_capture.h` is a one-line forwarding header)
@@ -53,26 +54,31 @@ devices/esp32/libraries/UltronVoice/            ← all of this is "how we hear"
 devices/esp32/ultron_voice/ultron_voice.ino     ← application logic only
 ```
 
-The sketch is ~110 lines of relay logic:
+The sketch is ~80 lines of glue — the library on one side, empty application hooks on the other:
 
 ```cpp
 #include <UltronVoice.h>
 UltronVoice voice;
 
-void setup() {
-  pinMode(kRelayLm, OUTPUT); pinMode(kRelayLb, OUTPUT);   // active-LOW, OFF at boot
-  Serial.begin(115200);
-  voice.begin();                                          // prints the boot banner
-}
+void setup() { voice.begin(); }                      // boot banner, EVT ERROR on fault
 
 void loop() {
   UltronVoice::Event ev;
   if (!voice.poll(ev)) return;
-  if (ev.type == UltronVoice::Type::Command) {
-    if (!strcmp(ev.id, "lb")) { /* LM + LB on */ }
+  switch (ev.type) {                                 // Wake / Command / Timeout / Error
+    case UltronVoice::Type::Command: onCommand(ev); break;   // T15 wires the relay engine here
+    case UltronVoice::Type::Wake:    onWake(ev);    break;   // T14 plays "Escuchando" here
+    default: break;
   }
 }
 ```
+
+**The relay layer is not in this sketch and must not be.** FR-009 / FR-017 / NFR-009 belong to
+**T15** (PR #40): `devices/esp32/ultron_voice/outputs.{h,cpp}` implements all seven Actuation
+Behavior Contract behaviours behind a `ChannelSink` (reusable by spec 006's companion and spec
+005's Pi), and `pins.h` owns the pin map with a wired/unwired flag per channel. The sketch's
+`onCommand()` is the seam where that engine is constructed over the real GPIOs — one source of
+truth for the channel contract, no second pin table, no second luz hierarchy.
 
 `poll()` performs one 100 ms microphone read and returns `true` at most once per 500 ms window,
 carrying one `Event { Wake | Command | Timeout | Error }` (`id`, `conf`, `tMs`). The library
