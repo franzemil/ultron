@@ -7,10 +7,12 @@ Two layers:
    with a fake clock. It asserts the Actuation Behavior Contract timings and
    priority rules — the accepted proof for the behaviours the trained 4-class
    model cannot reach yet (blink 1 s/1 s × 45 s, CP, wiper 45 s, A = 2 s,
-   CC = 0.5 s). It also asserts the command table really comes from the generated
-   registry, not from a second hand-written copy in C.
+   CC = 0.5 s) — plus the edge records the firmware prints as ``DBG out=`` lines
+   and the NFR-009 fail-safe. It also asserts the command table really comes from
+   the generated registry, not from a second hand-written copy in C.
 
-2. The registry drift check re-reads the generated header and compares
+2. The registry drift check re-reads the generated header
+   (``devices/esp32/libraries/UltronVoice/src/ultron_config.h``) and compares
    ``ULTRON_REGISTRY[]`` with ``model/registry.json``, so a registry edit that was
    not regenerated fails here instead of on the bench.
 
@@ -32,9 +34,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKETCH_DIR = REPO_ROOT / "devices/esp32/ultron_voice"
+LIBRARY_SRC = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src"
 TEST_SOURCE = REPO_ROOT / "tests/esp32/outputs_engine_test.cpp"
 ENGINE_SOURCE = SKETCH_DIR / "outputs.cpp"
-CONFIG_HEADER = SKETCH_DIR / "config.h"
+CONFIG_HEADER = LIBRARY_SRC / "ultron_config.h"
 REGISTRY = REPO_ROOT / "model/registry.json"
 
 
@@ -54,6 +57,7 @@ def test_output_engine_host_timings(tmp_path: Path) -> None:
         "-Wall",
         "-Wextra",
         f"-I{SKETCH_DIR}",
+        f"-I{LIBRARY_SRC}",
         str(TEST_SOURCE),
         str(ENGINE_SOURCE),
         "-o",

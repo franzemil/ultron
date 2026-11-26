@@ -148,6 +148,12 @@ struct Harness {
     }
     now_ms = to_ms;
   }
+
+  void failSafe(uint32_t t_ms) {
+    CHECK(t_ms >= now_ms);
+    now_ms = t_ms;
+    out.failSafe(t_ms);
+  }
 };
 
 /* Contract blink formula: 1 s ON / 1 s OFF, phase origin = command time, and OFF
@@ -257,6 +263,12 @@ void test_boot_is_off_and_stays_off_until_a_command() {
   h.tickTo(60000); /* a minute of ticks with no command */
   CHECK_U32_EQ(h.out.onMask(), 0);
   CHECK_U32_EQ(h.sink.events.size(), 0);
+
+  /* Boot is a state, not a toggle: the engine queues no edge, so the only
+   * `DBG out=… state=off` lines at boot are the pin layer's own proof. */
+  ultron::OutputController::Edge edges[ultron::OutputController::kEdgeCapacity];
+  CHECK_U32_EQ(h.out.takeEdges(edges, ultron::OutputController::kEdgeCapacity), 0);
+  CHECK_U32_EQ(h.out.droppedEdges(), 0);
 
   /* Unknown ids are rejected without touching a channel. */
   CHECK(!h.command("nope", 60050));
@@ -554,6 +566,72 @@ void test_groups_are_independent_and_quiet_without_commands() {
   CHECK_U32_EQ(h.sink.out_of_order, 0);
 }
 
+/* ── 11. edge records: exact tick timestamps for the `DBG out=` lines ────── */
+
+void test_edge_records() {
+  Harness h;
+
+  /* One command that moves two channels: both edges carry the command's tick. */
+  CHECK(h.command("lb", 1000));
+  ultron::OutputController::Edge e[ultron::OutputController::kEdgeCapacity];
+  size_t n = h.out.takeEdges(e, ultron::OutputController::kEdgeCapacity);
+  CHECK_U32_EQ(n, 2);
+  if (n == 2) {
+    CHECK(e[0].ch == ultron::kChLm && e[0].on && e[0].t_ms == 1000);
+    CHECK(e[1].ch == ultron::kChLb && e[1].on && e[1].t_ms == 1000);
+  }
+
+  /* Draining empties the ring: no duplicate DBG lines. */
+  CHECK_U32_EQ(h.out.takeEdges(e, ultron::OutputController::kEdgeCapacity), 0);
+
+  /* Timer-driven edges (blink phase) are stamped with the tick that produced
+   * them, not with the time the application printed the line. */
+  CHECK(h.command("gd", 2000));
+  CHECK_U32_EQ(h.out.takeEdges(e, ultron::OutputController::kEdgeCapacity), 1);
+  h.tickTo(3000);
+  n = h.out.takeEdges(e, ultron::OutputController::kEdgeCapacity);
+  CHECK_U32_EQ(n, 1);
+  if (n == 1) {
+    CHECK(e[0].ch == ultron::kChGd && !e[0].on && e[0].t_ms == 3000);
+  }
+  CHECK_U32_EQ(h.out.droppedEdges(), 0);
+}
+
+/* ── 12. fail-safe: a fault drops every channel (NFR-009) ────────────────── */
+
+void test_fail_safe_drops_every_channel() {
+  Harness h;
+  CHECK(h.command("la", 1000));   /* lm + lb + la latched ON */
+  CHECK(h.command("gd", 1000));   /* side blink running     */
+  CHECK(h.command("a", 1000));    /* pulse running          */
+  CHECK_U32_EQ(h.out.onMask(), ultron::channelBit(ultron::kChLm) |
+                                   ultron::channelBit(ultron::kChLb) |
+                                   ultron::channelBit(ultron::kChLa) |
+                                   ultron::channelBit(ultron::kChGd) |
+                                   ultron::channelBit(ultron::kChA));
+
+  h.failSafe(1100);
+  CHECK_U32_EQ(h.out.onMask(), 0);
+
+  /* The OFF edges are reported so the log shows the fail-safe happened. */
+  ultron::OutputController::Edge e[ultron::OutputController::kEdgeCapacity];
+  size_t offs = 0;
+  size_t n = h.out.takeEdges(e, ultron::OutputController::kEdgeCapacity);
+  for (size_t i = 0; i < n; i++) {
+    if (!e[i].on && e[i].t_ms == 1100) offs++;
+  }
+  CHECK_U32_EQ(offs, 5);
+
+  /* Nothing comes back on its own after the fault. */
+  h.tickTo(70000);
+  CHECK_U32_EQ(h.out.onMask(), 0);
+  CHECK_U32_EQ(h.sink.repeats, 0);
+
+  /* And a fresh command still works (the engine is not wedged). */
+  CHECK(h.command("lm", 70050));
+  CHECK_U32_EQ(h.out.onMask(), ultron::channelBit(ultron::kChLm));
+}
+
 }  // namespace
 
 int main() {
@@ -567,6 +645,8 @@ int main() {
   test_motor_45s();
   test_pulses();
   test_groups_are_independent_and_quiet_without_commands();
+  test_edge_records();
+  test_fail_safe_drops_every_channel();
 
   if (g_failures != 0) {
     std::printf("\noutputs_engine_test: %d check(s) FAILED\n", g_failures);
@@ -582,6 +662,7 @@ int main() {
       "  pulses      A = 2000 ms, CC = 500 ms, restart-safe, no spontaneous edges\n"
       "  boot        all channels OFF at begin(), no sink call before a command\n"
       "  registry    command table generated from model/registry.json (11 entries)\n"
-      "  pins        LM D5/GPIO6, LB D8/GPIO7, active-LOW, 2 wired of 9\n");
+      "  pins        LM D5/GPIO6, LB D8/GPIO7, active-LOW, 2 wired of 9\n"
+      "  edges       one record per change, drained per loop, fail-safe drops all\n");
   return 0;
 }
