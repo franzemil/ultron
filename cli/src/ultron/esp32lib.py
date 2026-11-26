@@ -19,8 +19,8 @@ config or model  patch + 1
 class order      minor + 1  (a consumer that hard-coded an index must notice)
 ===============  ===================================================================
 
-The two generators stay in ``scripts/`` (they are repo tooling, also used directly when
-regenerating headers); this module resolves the repository root the same way
+The two header generators are package modules (`ultron.esp32_config`, `ultron.esp32_model`)
+exposed as `ultron esp32 config|model`; this module resolves the repository root the same way
 :mod:`ultron.features` resolves ``dsp/`` for the ctypes MFCC binding.
 """
 
