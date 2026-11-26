@@ -50,8 +50,23 @@ The same map lives in firmware as data: `devices/esp32/ultron_voice/pins.h`
 ```
 DBG out_pins wired=2/9 lm=gpio6:alow lb=gpio7:alow la=unwired gd=unwired gi=unwired
                        lpb=unwired lpa=unwired a=unwired cc=unwired
+DBG out_registry commands=11 trained=2 unknown_behavior=0 unknown_channels=0
 DBG out=lm state=off t_ms=…     ← explicit OFF at boot, both wired channels
 DBG out=lb state=off t_ms=…
+```
+
+### 50 ms tick (FR-009)
+
+`UltronVoice::poll()` performs one blocking ~100 ms microphone read, so the relay tick does **not**
+ride the classification loop: `relay_gpio.h` starts a 50 ms `esp_timer` and serialises it with the
+application's command handling through a mutex. The timer never prints — the engine queues each
+channel change with the exact tick timestamp and the loop drains them into `DBG out=` lines, so the
+console stays single-threaded for those lines:
+
+```
+DBG out=lm state=on t_ms=20014
+DBG outcmd id=lb behavior=steady acted=1 on=0x03 t_ms=20014
+DBG tick_ms n=400 min=49 max=61 avg=50 on=0x03 t_ms=40016
 ```
 
 ### Power rules (non-negotiable)
@@ -75,6 +90,8 @@ DBG out=lb state=off t_ms=…
    serial log itself proves no channel was ON before the first `CMD`.
 4. Relays only move on a command-driven edge: `OutputController` calls the pin layer only when a
    channel's desired state *changes*.
+5. On a runtime fault (`EVT ERROR`) the sketch calls `OutputController::failSafe()`: every
+   behaviour is dropped and every channel goes OFF instead of holding a stale command.
 
 ### Behaviour timings on this wiring
 
@@ -118,24 +135,24 @@ target-specific part:
 
 | Target | Pin layer | Milestone |
 |---|---|---|
-| XIAO ESP32S3 | `relay_gpio.h` — active-LOW `digitalWrite` + `DBG out=` lines | this milestone |
+| XIAO ESP32S3 | `relay_gpio.h` — active-LOW `digitalWrite`, 50 ms `esp_timer` tick, `DBG out=` lines | this milestone |
 | Companion ESP32-S3 SuperMini | its own `ChannelSink` over GPIO1…GPIO10 (UART-fed events) | spec 006 |
 | Orange Pi Zero 2W | a `ChannelSink` over libgpiod | spec 005 |
 
-Same registry (`model/registry.json` → `config.h`), same tick (50 ms), same timings, same event
-semantics on every target — any divergence in relay behaviour between targets is a bug.
+Same registry (`model/registry.json` → the generated `ultron_config.h`), same tick (50 ms), same
+timings, same event semantics on every target — any divergence in relay behaviour between targets
+is a bug.
 
 ## 4. Bringing the bench up
 
 ```sh
-# 1. Compile (no device needed)
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+# 1. Compile (no device needed). The voice pipeline is an Arduino library
+#    (devices/esp32/libraries/UltronVoice), so --libraries is required.
+arduino-cli compile --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 
-# 2. Flash + open the console — the XIAO is shared with the T12/T14 workers: take the lock
-lockf /tmp/ultron-xiao.lock -c '\
-  arduino-cli upload -p /dev/cu.usbmodem2101 --fqbn esp32:esp32:XIAO_ESP32S3 \
-    devices/esp32/ultron_voice'
-lockf /tmp/ultron-xiao.lock -c 'arduino-cli monitor -p /dev/cu.usbmodem2101 -c baudrate=115200'
+# 2. Flash + capture the console — the XIAO is shared with the T12/T14 workers
+./scripts/deploy_xiao.sh --lock --listen 45            # add --selftest for scripted EVT lines
 
 # 3. Host proof for the behaviours this milestone cannot trigger by voice yet
 uv run pytest tests/test_esp32_outputs.py -v
@@ -143,8 +160,11 @@ uv run pytest tests/test_esp32_outputs.py -v
 
 What to look for in the console:
 
-- Boot: `DBG out_pins wired=2/9 …`, then `DBG out=lm state=off` + `DBG out=lb state=off`
-  (no `state=on` before the first `EVT CMD`).
-- `EVT CMD id=lb` → `DBG outcmd id=lb behavior=steady acted=1 on=0x03`, `DBG out=lb state=on`.
+- Boot: `DBG out_pins wired=2/9 …`, `DBG out_registry commands=11 …`, then
+  `DBG out=lm state=off` + `DBG out=lb state=off` (no `state=on` before the first `EVT CMD`).
+- `EVT CMD id=lb` → `DBG outcmd id=lb behavior=steady acted=1 on=0x03` and `DBG out=lb state=on`
+  and `DBG out=lm state=on`.
 - `EVT CMD id=la` → `DBG out=la state=unwired want=on` plus `DBG out=lb state=on`.
 - Steady: `DBG tick_ms …` keeps printing with `on=0x03` and no further `DBG out=` lines.
+- `EVT CMD id=la` is only reachable through `--selftest` until spec 006 trains the phrase; the
+  scripted scores go through the real state machine and the real output controller.
