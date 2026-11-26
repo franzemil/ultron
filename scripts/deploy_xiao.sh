@@ -93,6 +93,16 @@ fi
 
 [[ -d "$SKETCH" ]] || die "sketch not found: $SKETCH"
 command -v arduino-cli >/dev/null || die "arduino-cli not on PATH"
+
+# The board embeds a generated model + config; flashing stale ones is how a device ends up
+# disagreeing with model/. Cheap check, loud failure (run the refresh command it prints).
+if [[ "$COMPILE_ONLY" != "1" || "$DRY_RUN" != "1" ]]; then
+  if ! python3 "${REPO_ROOT}/scripts/gen_esp32_library.py" --check >/dev/null 2>&1; then
+    warn "UltronVoice library artifacts are stale — run:"
+    warn "  python3 scripts/gen_esp32_library.py --placeholder   # or without --placeholder"
+    die "refusing to build a firmware whose embedded artifacts disagree with model/" 2
+  fi
+fi
 [[ "$LISTEN_SECONDS" =~ ^[0-9]+$ ]] || die "--listen wants whole seconds"
 
 # Without --lock, at least tell the operator if someone else owns the board.
@@ -135,6 +145,8 @@ else
       die "compile failed — nothing was flashed" 3
     }
     printf '%s\n' "$COMPILE_OUT" | grep -E "Sketch uses|Global variables" || true
+  LIB_VERSION="$(grep -m1 '^version=' "${LIBRARIES}/UltronVoice/library.properties" 2>/dev/null | cut -d= -f2)"
+  log "UltronVoice v${LIB_VERSION:-?}"
   fi
 fi
 

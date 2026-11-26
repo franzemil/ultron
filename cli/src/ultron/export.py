@@ -15,6 +15,8 @@ Exit codes:
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -64,6 +66,15 @@ def export_tflite_command(
     max_parity: int = typer.Option(
         1000, "--max-parity", min=10, help="Parity-set sample cap (>= 10)."
     ),
+    library: bool = typer.Option(
+        False,
+        "--library",
+        help="After exporting, refresh the UltronVoice Arduino library (embed the new "
+        "flatbuffer + config, bump library.properties). On by default when --out is build/.",
+    ),
+    no_library: bool = typer.Option(
+        False, "--no-library", help="Never touch devices/esp32/libraries/UltronVoice."
+    ),
 ) -> None:
     """Export the checkpoint to int8 + float16 TFLite; FAIL below 99% parity."""
     try:
@@ -103,3 +114,33 @@ def export_tflite_command(
         f"fp16 {result.fp16_agreement:.2%} over {result.n_parity} samples"
     )
     typer.secho(f"parity report: {result.report_path}", fg=typer.colors.GREEN)
+
+    # Keep the Arduino library in step with what was just exported: the board embeds the
+    # flatbuffer + generated thresholds, so a new artifact that never reaches the library
+    # means a flashed device that disagrees with the export. `--out build/` (the default)
+    # is the real workflow; tests and ad-hoc exports opt in explicitly with --library.
+    wants_library = library or (not no_library and out.resolve() == Path("build").resolve())
+    if wants_library:
+        script = Path(__file__).resolve().parents[3] / "scripts/gen_esp32_library.py"
+        if not script.is_file():
+            typer.secho(
+                f"error: --library requested but {script} is missing (not in the repo?)",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2)
+        typer.echo("")
+        typer.secho("refreshing the UltronVoice Arduino library…", fg=typer.colors.CYAN)
+        proc = subprocess.run(
+            [sys.executable, str(script), "--model", str(result.int8_path)],
+            capture_output=True,
+            text=True,
+        )
+        typer.echo(proc.stdout.rstrip())
+        if proc.returncode != 0:
+            typer.secho(proc.stderr.rstrip(), fg=typer.colors.RED)
+            typer.secho(
+                "error: the export succeeded but the library refresh failed — the board "
+                "would embed stale artifacts. Fix the library before flashing.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=2)

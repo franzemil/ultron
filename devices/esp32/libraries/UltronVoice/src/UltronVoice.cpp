@@ -69,8 +69,10 @@ void UltronVoice::fail(const char *code, const char *detail) {
 void UltronVoice::printBootBanner() {
   char line[200];
   snprintf(line, sizeof(line),
-           "DBG boot fw=ultron_voice task=T12 console_only=1 classes=%d cmds=%d window_ms=%lu",
-           ULTRON_NUM_CLASSES, ULTRON_NUM_COMMANDS, (unsigned long)ULTRON_WINDOW_MS);
+           "DBG boot fw=ultron_voice lib=%s task=T12 console_only=1 classes=%d cmds=%d "
+           "window_ms=%lu",
+           ULTRON_LIBRARY_VERSION, ULTRON_NUM_CLASSES, ULTRON_NUM_COMMANDS,
+           (unsigned long)ULTRON_WINDOW_MS);
   console_->println(line);
   console_->print("DBG config sha256=");
   console_->print(ULTRON_CONFIG_SHA256);

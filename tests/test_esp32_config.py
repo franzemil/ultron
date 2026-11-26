@@ -130,3 +130,38 @@ def test_library_mfcc_copies_are_byte_identical():
     from scripts.sync_ultronvoice import main as sync_main
 
     assert sync_main(["--check"]) == 0
+
+
+# ── library versioning (scripts/gen_esp32_library.py) ────────────────────────
+
+
+def test_library_version_is_in_the_generated_header():
+    """A flashed board must be able to say which library/model it is running."""
+    from scripts.gen_esp32_config import read_library_version
+
+    version = read_library_version()
+    assert re.match(r"^\d+\.\d+\.\d+$", version), version
+    assert f'#define ULTRON_LIBRARY_VERSION "{version}"' in read_config()
+    assert f"library version: {version}" in read_config()
+
+
+def test_artifacts_are_current():
+    """--check: the committed library agrees with model/ (deploy refuses to flash otherwise)."""
+    from scripts.gen_esp32_library import main as library_main
+
+    assert library_main(["--check"]) == 0
+
+
+def test_bump_rules_are_patch_and_minor():
+    from scripts.gen_esp32_library import bump_version
+
+    assert bump_version("0.1.0", "patch") == "0.1.1"
+    assert bump_version("0.1.9", "patch") == "0.1.10"
+    assert bump_version("0.1.4", "minor") == "0.2.0"
+    assert bump_version("3.7.2", "minor") == "3.8.0"
+
+
+def test_library_properties_has_a_semver():
+    from scripts.gen_esp32_library import read_version
+
+    assert re.match(r"^\d+\.\d+\.\d+$", read_version())

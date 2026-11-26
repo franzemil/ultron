@@ -170,6 +170,37 @@ functions keep one shared source of truth that every sketch can `#include` relat
 #include "../common/pdm_capture.h"
 ```
 
+## Artifacts → library version (one command)
+
+The board embeds a flatbuffer and a generated config, so "which firmware is this?" has to be
+answerable from the console. `gen_esp32_library.py` refreshes the library and bumps its version:
+
+```sh
+uv run python scripts/gen_esp32_library.py                  # real model (build/model_int8.tflite)
+uv run python scripts/gen_esp32_library.py --placeholder     # deterministic placeholder
+uv run python scripts/gen_esp32_library.py --check           # stale? exit 1 (deploy runs this)
+```
+
+It writes `src/mfcc.{c,h}` (byte-identical to `dsp/`), `src/ultron_config.h`, `src/model_data.h`
+and `library.properties`, with these bump rules:
+
+| What changed | Version |
+|---|---|
+| nothing (idempotent) | unchanged — safe to run repeatedly |
+| config or model bytes | **patch** + 1 |
+| frozen class order | **minor** + 1 (a consumer that hard-coded an index must notice) |
+
+The version is compiled in (`ULTRON_LIBRARY_VERSION`) and printed at boot:
+
+```
+DBG boot fw=ultron_voice lib=0.1.1 task=T12 console_only=1 classes=4 cmds=2 window_ms=5000
+```
+
+`ultron export tflite` runs the same refresh automatically when `--out` is the default `build/`
+(so a fresh export can never leave the board on stale artifacts), and `--library` / `--no-library`
+force or suppress it. `scripts/deploy_xiao.sh` runs `--check` before compiling and refuses to
+build firmware whose embedded artifacts disagree with `model/`.
+
 ## Model
 
 `model_data.h` embeds the flatbuffer as `const unsigned char[]` for

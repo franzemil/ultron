@@ -10,6 +10,7 @@
  * CI guard: tests/test_esp32_config.py re-renders and fails on drift.
  *
  * config sha256 : 0636d6a6fd6a156d0107da13dca86ad030642432e97915eec6ee50aab8bcdbd2
+ * library version: 0.1.1  (library.properties, bumped by gen_esp32_library.py)
  * class order   : wake noise lb la
  * order source  : derived: wake, noise, then trained commands in registry order
  * window        : 5.0 s
@@ -19,6 +20,7 @@
 #define ULTRON_CONFIG_H
 
 #define ULTRON_CONFIG_SHA256 "0636d6a6fd6a156d0107da13dca86ad030642432e97915eec6ee50aab8bcdbd2"
+#define ULTRON_LIBRARY_VERSION "0.1.1"
 #define ULTRON_CLASS_ORDER_SOURCE "derived: wake, noise, then trained commands in registry order"
 
 /* Frozen class order — the model's output index mapping (spec 002 TD-012). */

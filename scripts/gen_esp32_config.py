@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -129,12 +130,24 @@ def _float(value: float) -> str:
     return text + "f"
 
 
+def read_library_version(properties: Path = None) -> str:
+    """Version of the consuming Arduino library (library.properties), or "unversioned"."""
+    path = properties or (REPO_ROOT / "devices/esp32/libraries/UltronVoice/library.properties")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return "unversioned"
+    match = re.search(r"^version=(\d+\.\d+\.\d+)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else "unversioned"
+
+
 def render(
     thresholds: dict,
     registry: dict,
     class_order: list[str],
     order_source: str,
     source_paths: dict[str, Path],
+    library_version: str | None = None,
 ) -> str:
     trained_ids = list(thresholds["commands"])
     registry_by_id = {str(cmd["id"]): cmd for cmd in registry["commands"]}
@@ -157,6 +170,7 @@ def render(
         digest.update(path.read_bytes())
     digest.update(json.dumps([class_order, order_source, thresholds, registry]).encode())
     config_sha = digest.hexdigest()
+    lib_version = library_version if library_version is not None else read_library_version()
 
     lines: list[str] = []
     w = lines.append
@@ -172,6 +186,7 @@ def render(
     w(" * CI guard: tests/test_esp32_config.py re-renders and fails on drift.")
     w(" *")
     w(f" * config sha256 : {config_sha}")
+    w(f" * library version: {lib_version}  (library.properties, bumped by gen_esp32_library.py)")
     w(f" * class order   : {' '.join(class_order)}")
     w(f" * order source  : {order_source}")
     w(f" * window        : {thresholds['window_s']} s")
@@ -181,6 +196,7 @@ def render(
     w("#define ULTRON_CONFIG_H")
     w("")
     w(f'#define ULTRON_CONFIG_SHA256 "{config_sha}"')
+    w(f'#define ULTRON_LIBRARY_VERSION "{lib_version}"')
     w(f'#define ULTRON_CLASS_ORDER_SOURCE "{order_source}"')
     w("")
     w("/* Frozen class order — the model's output index mapping (spec 002 TD-012). */")
@@ -234,6 +250,7 @@ def generate(
     thresholds_path: Path = DEFAULT_THRESHOLDS,
     registry_path: Path = DEFAULT_REGISTRY,
     labels_path: Path | None = DEFAULT_LABELS,
+    library_version: str | None = None,
 ) -> str:
     thresholds = load_thresholds(thresholds_path)
     registry = load_registry(registry_path)
@@ -244,6 +261,7 @@ def generate(
         class_order,
         order_source,
         {"thresholds": thresholds_path, "registry": registry_path},
+        library_version=library_version,
     )
 
 
