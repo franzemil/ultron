@@ -4,8 +4,9 @@
  *
  * Everything voice-related lives in the **UltronVoice** library
  * (devices/esp32/libraries/UltronVoice): PDM capture, MFCC, TFLite-Micro, thresholds,
- * the WAKE_LISTEN/CONFIRMING/LISTENING machine and the Target Event Contract lines
- * (`EVT WAKE / CMD / TIMEOUT / ERROR` + one `DBG pred=` line per window).
+ * the WAKE_LISTEN/CONFIRMING/LISTENING machine, the Target Event Contract lines
+ * (`EVT WAKE / CMD / TIMEOUT / ERROR` + one `DBG pred=` line per window) and the
+ * clip-arming timing (Options.wakeClipMs / commandClipMs → FR-019/NFR-010).
  *
  * This file is app glue only — it must not grow a voice pipeline, a pin map or a
  * channel contract:
@@ -16,21 +17,26 @@
  *                 and pins.h (the pin map, with wired/unwired per channel). Those are the
  *                 single source of truth for FR-009 / FR-017 / NFR-009; onCommand() below
  *                 only binds them to the console through relay_gpio.h.
- *   T14 (#41)   : audio feedback — set Options.wakeClipMs / commandClipMs and play the clip
- *                 on the Wake/Command events (the library already owns the overlap timing).
+ *   T14 (#41)   : audio feedback — feedback.{h,cpp} plays the committed clips on the
+ *                 Wake/Command events over I2S1; this sketch boots the player
+ *                 (fail-fast on SPK_INIT_FAILED), arms the library with the clips'
+ *                 real durations and services the player from loop().
  *
- * Implemented here: T12 (library bring-up) and T15 (the relay binding below).
+ * Implemented here: T12 (library bring-up), T15 (the relay binding) and T14
+ * (speaker boot + the two confirmation clips).
  *
  * Build/flash: ./scripts/deploy_xiao.sh [--selftest] [--listen 45]
- * Expected console: boot banner, `DBG out_pins` / `DBG out_registry` / `DBG out=… state=off`,
- * then `DBG pred=…` every 500 ms and `EVT …` lines when a gate is crossed. With the
- * placeholder model no `EVT` line can appear (see PR #38).
+ * Expected console: boot banner, `DBG audio …` (T14), `DBG out_pins` / `DBG out_registry`
+ * / `DBG out=… state=off` (T15), then `DBG pred=…` every 500 ms and `EVT …` lines when a
+ * gate is crossed, each accepted wake/command followed by `DBG play=… state=start|end`.
+ * With the placeholder model no `EVT` line can appear (see PR #38).
  */
 
 #include <Arduino.h>
 
 #include <UltronVoice.h>
 
+#include "feedback.h"      /* T14: fixed clips → I2S1 → MAX98357A               */
 #include "outputs.h"        /* T15: behaviour engine (channel ids, no hardware)   */
 #include "outputs_config.h" /* T15: generated registry → engine command table     */
 #include "relay_gpio.h"     /* T15: pin map (pins.h) + GPIO sink + 50 ms tick    */
@@ -87,8 +93,44 @@ void outputsPoll() {
  * contract and the timings live in pins.h / outputs.* / relay_gpio.h.
  * ------------------------------------------------------------------------- */
 
+/* T14 — audio feedback (FR-018 / FR-019 / FR-037 / NFR-010) ──────────────────
+ * The library owns the timing (Options.wakeClipMs / commandClipMs arm the
+ * playback interval on the event edge, so CONFIRMING lasts the clip and the 5 s
+ * window starts at playback end). This layer owns the player and the fail-fast
+ * boot check. Nothing here blocks: feedback_service() feeds a bounded lead.
+ * ------------------------------------------------------------------------- */
+
+bool g_halted = false; /* SPK_INIT_FAILED: a mute device must not pretend to listen */
+
+void audioBegin() {
+  if (!ultron::feedback_begin()) {
+    /* Same contract text the library's own fail() path produces (design.md →
+     * "Audio feedback": fail-fast, Q-003 precedent). */
+    voice.console().println("DBG spk_init=0 i2s=1 pins=3/4/5");
+    voice.console().println("EVT ERROR code=SPK_INIT_FAILED");
+    voice.console().println("DBG halted=1 — reboot to retry");
+    g_halted = true;
+    return;
+  }
+  voice.console().println("DBG spk_init=1 i2s=1 pins=3/4/5 gain=floating sd=floating vin=5v_usb");
+  /* FR-018 / FR-037: the clips are fixed assets, identical for every target. */
+  for (int i = 0; i < 2; i++) {
+    const ultron::ClipInfo *clip = ultron::feedback_clip(
+        i == 0 ? ultron::kFeedbackEscuchando : ultron::kFeedbackComando);
+    voice.console().printf("DBG audio clip=%s samples=%lu ms=%lu budget_ms=%d rate=%d\r\n",
+                           clip->name, (unsigned long)clip->samples,
+                           (unsigned long)clip->duration_ms, i == 0 ? 500 : 300,
+                           ultron::feedback_sample_rate());
+  }
+}
+
 /* T15 seam — relay layer (FR-009 / FR-017 / NFR-009). */
 void onCommand(const UltronVoice::Event &ev) {
+  /* T14 (FR-037): speak "Comando" on the same edge. ev.tMs is the acceptance
+   * timestamp the library armed the discard interval with — play on that clock so
+   * the clip's audible end matches playback_end_ms. */
+  ultron::feedback_play(ultron::kFeedbackComando, ev.tMs);
+
   if (!g_outputs_ready || ev.id == nullptr) return;
 
   const uint32_t now = millis();
@@ -105,10 +147,12 @@ void onCommand(const UltronVoice::Event &ev) {
                          acted ? 1 : 0, mask, (unsigned long)now);
 }
 
-/* T14 seam — audio feedback (FR-018 / FR-019 / FR-037 / NFR-010). Play the fixed
- * clip here; the library has already armed the playback interval on the same edge. */
+/* T14 seam — audio feedback (FR-018 / FR-019 / FR-037 / NFR-010). The library
+ * already armed the playback interval on this same edge (Options.wakeClipMs), so
+ * this only starts the audio — on ev.tMs, the timestamp the interval was armed
+ * with, never a fresh millis() reading. */
 void onWake(const UltronVoice::Event &ev) {
-  (void)ev;
+  ultron::feedback_play(ultron::kFeedbackEscuchando, ev.tMs);
 }
 
 }  // namespace
@@ -125,7 +169,18 @@ void setup() {
 #ifdef ULTRON_SELFTEST
   options.selftest = true; /* scripted scores: proves the contract, never recognition */
 #endif
+  /* T14 (FR-018/FR-019/FR-037/NFR-010): tell the library how long each committed
+   * clip is. It arms the playback interval on the Wake/Command edge with these
+   * values — CONFIRMING lasts "Escuchando" and the 5 s window starts at its end;
+   * the "comando" interval makes the windows that hear it non-deciding. The
+   * durations come from the assets (clips.h), never from a literal here. */
+  options.wakeClipMs = ultron::feedback_clip(ultron::kFeedbackEscuchando)->duration_ms;
+  options.commandClipMs = ultron::feedback_clip(ultron::kFeedbackComando)->duration_ms;
   voice.begin(options); /* prints the boot banner; EVT ERROR + halt on any fault */
+
+  /* T14: the speaker is part of the boot. A missing/unusable output device
+   * aborts with EVT ERROR code=SPK_INIT_FAILED (g_halted stops the loop). */
+  audioBegin();
 
   /* T15 (NFR-009): the external pull-ups held the coils OFF from reset; this is
    * the explicit OFF + the 50 ms tick, before any command can arrive. Runs even
@@ -134,8 +189,20 @@ void setup() {
 }
 
 void loop() {
+  /* T14: SPK_INIT_FAILED at boot — stay halted (outputs were left OFF by the
+   * external pull-ups, so the relay side is safe too). */
+  if (g_halted) {
+    delay(1000);
+    return;
+  }
+
   UltronVoice::Event ev;
   const bool got = voice.poll(ev);
+
+  /* T14: keep the confirmation clip fed. UltronVoice::poll() blocks ~100 ms on
+   * the microphone read, so the player is serviced here, right after it, with a
+   * bounded lead (never a whole-clip wait). */
+  ultron::feedback_service(millis());
 
   /* T15: relay edges come from the 50 ms tick, not from this loop. */
   if (g_outputs_ready) outputsPoll();
