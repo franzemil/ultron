@@ -43,8 +43,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MODEL = REPO_ROOT / "build/model_int8.tflite"
-DEFAULT_OUT = REPO_ROOT / "devices/esp32/ultron_voice/model_data.h"
-DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/ultron_voice/config.h"
+DEFAULT_OUT = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/model_data.h"
+DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 DEFAULT_PLACEHOLDER_MODEL = REPO_ROOT / "build/placeholder/model_int8.tflite"
 
 # NFR-002: int8 model ≤ 100 KB.

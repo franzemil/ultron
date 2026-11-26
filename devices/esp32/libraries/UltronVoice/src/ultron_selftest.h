@@ -33,7 +33,7 @@
 #ifndef ULTRON_SELFTEST_H
 #define ULTRON_SELFTEST_H
 
-#include "config.h"
+#include "ultron_config.h"
 
 namespace selftest {
 

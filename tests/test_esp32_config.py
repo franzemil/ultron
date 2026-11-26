@@ -29,7 +29,7 @@ from scripts.gen_esp32_config import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG = REPO_ROOT / "devices/esp32/ultron_voice/config.h"
+CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 
 
 def read_config() -> str:
@@ -60,7 +60,7 @@ def test_thresholds_are_not_hardcoded_in_c_sources():
     text = read_config()
     assert "GENERATED FILE, DO NOT EDIT" in text
     assert "ULTRON_WAKE_THRESHOLD" in text
-    for src in (REPO_ROOT / "devices/esp32/ultron_voice").glob("*.c"):
+    for src in (REPO_ROOT / "devices/esp32/libraries/UltronVoice/src").glob("*.c"):
         body = src.read_text(encoding="utf-8")
         assert "0.8f" not in body, f"{src.name} hardcodes a threshold literal"
     for src in (REPO_ROOT / "devices/esp32/ultron_voice").glob("*.ino"):
@@ -123,3 +123,10 @@ def test_unknown_trained_command_fails_loudly(tmp_path):
 def test_missing_thresholds_file_is_a_clear_error(tmp_path):
     with pytest.raises(ConfigError, match="thresholds.json not found"):
         load_thresholds(tmp_path / "nope.json")
+
+
+def test_library_mfcc_copies_are_byte_identical():
+    """The library vendors dsp/mfcc.c; drift must fail loudly (same bytes as the host)."""
+    from scripts.sync_ultronvoice import main as sync_main
+
+    assert sync_main(["--check"]) == 0

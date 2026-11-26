@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate ``devices/esp32/ultron_voice/config.h`` from the model metadata.
 
-Task: spec 003-can-act **T12** ("Thresholds + registry injected at build into
-`devices/esp32/ultron_voice/config.h`"). Nothing about the operating point may be
+Task: spec 003-can-act **T12** ("Thresholds + registry injected at build into a
+generated header"). Nothing about the operating point may be
 hardcoded in C: the thresholds come from ``model/thresholds.json`` (spec 002
 Q-006) and the command identity (id, sigla, behavior, channels) from
 ``model/registry.json`` (spec 001 T3).
@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = REPO_ROOT / "devices/esp32/ultron_voice/config.h"
+DEFAULT_OUT = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 DEFAULT_THRESHOLDS = REPO_ROOT / "model/thresholds.json"
 DEFAULT_REGISTRY = REPO_ROOT / "model/registry.json"
 DEFAULT_LABELS = REPO_ROOT / "build/labels.json"

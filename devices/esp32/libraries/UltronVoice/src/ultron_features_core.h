@@ -22,7 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../../dsp/mfcc.h" /* shared C MFCC library (spec 001) — single source of truth */
+#include "mfcc.h" /* shared C MFCC library (spec 001) — single source of truth */
 
 #ifdef __cplusplus
 extern "C" {

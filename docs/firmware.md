@@ -4,8 +4,10 @@ Everything the XIAO runs to turn "hey ultron" + a command phrase into console ev
 without audio output and without relays. Audio feedback is T14, the 2 relay channels are
 T15, and both are built on top of this tree.
 
-- Sketch: `devices/esp32/ultron_voice/`
-- Shared PDM capture: `devices/esp32/common/pdm_capture.h` (T14/T28 reuse it)
+- Sketch: `devices/esp32/ultron_voice/ultron_voice.ino` — **application logic only** (relays)
+- Library: `devices/esp32/libraries/UltronVoice/` — the whole voice pipeline
+- Shared PDM capture: `libraries/UltronVoice/src/pdm_capture.h` (T14/T28 reuse it; the old
+  `devices/esp32/common/pdm_capture.h` is a one-line forwarding header)
 - Spec: `.ai/sdd/specs/003-can-act/` (requirements → design → tasks)
 - Hardware: Seeed XIAO ESP32S3 **Sense** (PDM mic on the Sense expansion board)
 
@@ -14,12 +16,12 @@ T15, and both are built on top of this tree.
 ```
 PDM mic (GPIO40 clk / GPIO41 data, I2S0)
    └─► 2 s int16 ring buffer @ 16 kHz, 500 ms hop          features.cpp     64 KB static
-        └─► window DC-offset correction                     features_core.c  (numpy-equivalent)
+        └─► window DC-offset correction                ultron_features_core.c (numpy-equivalent)
              └─► shared C MFCC: 100 frames x 13 coefs       dsp/mfcc.c       (spec 001, not re-implemented)
-                  └─► int8 quantization (scale/zero_point)  features_core.c
+                  └─► int8 quantization (scale/zero_point) ultron_features_core.c
                        └─► TFLite-Micro, AllOpsResolver      infer.cpp        64 KB static arena
                             └─► 4-class scores (softmax in-graph)
-                                 └─► WAKE_LISTEN / CONFIRMING / LISTENING   state_machine.c
+                                 └─► WAKE_LISTEN / CONFIRMING / LISTENING   ultron_state_machine.c
                                       └─► USB serial: EVT lines + DBG pred= lines
 ```
 
@@ -28,6 +30,64 @@ scratch live in `.bss`. Nothing allocates inside the inference loop (the shared 
 used to `malloc()` one 40-float buffer per frame; that is a stack array now — same arithmetic,
 `tests/test_dsp_parity.py` unchanged and green). `mfcc_init()`'s table allocation happens once
 at boot and is reported in the `DBG mem` line.
+
+## Layout: library vs. sketch
+
+The voice pipeline is an **Arduino library**, not sketch code, so a sketch contains only the
+application logic:
+
+```
+devices/esp32/libraries/UltronVoice/            ← all of this is "how we hear"
+  library.properties
+  src/UltronVoice.h, UltronVoice.cpp           ← the public surface: begin() / poll(Event)
+  src/ultron_state_machine.{h,c}               ← WAKE_LISTEN / CONFIRMING / LISTENING
+  src/ultron_features.{h,cpp}                  ← 2 s ring, 500 ms hop
+  src/ultron_features_core.{h,c}               ← DC fix, MFCC, int8 quantize (portable C99)
+  src/ultron_infer.{h,cpp}                     ← TFLite-Micro, AllOpsResolver, 64 KB arena
+  src/pdm_capture.h                            ← shared I2S PDM RX capture (I2S0)
+  src/mfcc.{c,h}                               ← vendored copy of dsp/mfcc.c (drift-guarded)
+  src/ultron_config.h                          ← GENERATED: thresholds + registry subset
+  src/model_data.h                             ← GENERATED: flatbuffer bytes
+  src/ultron_selftest.h                        ← scripted scores (plumbing proof)
+
+devices/esp32/ultron_voice/ultron_voice.ino     ← application logic only
+```
+
+The sketch is ~110 lines of relay logic:
+
+```cpp
+#include <UltronVoice.h>
+UltronVoice voice;
+
+void setup() {
+  pinMode(kRelayLm, OUTPUT); pinMode(kRelayLb, OUTPUT);   // active-LOW, OFF at boot
+  Serial.begin(115200);
+  voice.begin();                                          // prints the boot banner
+}
+
+void loop() {
+  UltronVoice::Event ev;
+  if (!voice.poll(ev)) return;
+  if (ev.type == UltronVoice::Type::Command) {
+    if (!strcmp(ev.id, "lb")) { /* LM + LB on */ }
+  }
+}
+```
+
+`poll()` performs one 100 ms microphone read and returns `true` at most once per 500 ms window,
+carrying one `Event { Wake | Command | Timeout | Error }` (`id`, `conf`, `tMs`). The library
+prints the `EVT`/`DBG` lines itself on the `Stream` you pass in `Options.console` (default
+`Serial`), so the contract is identical no matter which sketch uses it.
+
+`Options` is also where T14 plugs audio in: `wakeClipMs = 500` / `commandClipMs = 300` make the
+library arm the playback interval **on the event edge**, so `CONFIRMING` lasts exactly as long as
+the clip and the 5 s window starts at its end (FR-019/NFR-010) — the sketch only has to play the
+audio when it receives the event.
+
+An Arduino library must be self-contained (arduino-cli builds only the library's own `src/`), so
+`src/mfcc.c` is a **vendored copy** of `dsp/mfcc.c`. `scripts/sync_ultronvoice.py --check` fails
+on any drift and `tests/test_esp32_config.py` runs it, so the firmware cannot silently run an old
+MFCC while the host pipeline moved on.
 
 ## Event contract (design.md → "Event contract")
 
@@ -181,7 +241,8 @@ A model that does not fit fails loud (`EVT ERROR code=ARENA_TOO_SMALL`).
 ## Build
 
 ```sh
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+arduino-cli compile --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 ```
 
 Verified with arduino-cli 1.5.1, esp32 core 3.3.12, `Chirale_TensorFLowLite` 2.0.0 and
@@ -193,7 +254,8 @@ Verified with arduino-cli 1.5.1, esp32 core 3.3.12, `Chirale_TensorFLowLite` 2.0
 ### Self-test build (scripted scores, real event lines)
 
 ```sh
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 \
+arduino-cli compile --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 \
   --build-property "compiler.cpp.extra_flags=-DULTRON_SELFTEST=1" \
   devices/esp32/ultron_voice
 ```
@@ -242,13 +304,15 @@ lockf -k /tmp/ultron-xiao.lock /bin/sh -c './scripts/deploy_xiao.sh --listen 40'
 
 ```sh
 # 1. build without touching the port
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+arduino-cli compile --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 
 # 2. is the chip alive? (read-only; exit 1 = zero bytes = hung)
 python3 scripts/serial_log.py --seconds 5 --quiet; echo "exit=$?"
 
 # 3. flash (bootloader 0x0, partitions 0x8000, boot_app0 0xe000, app 0x10000)
-arduino-cli upload -p /dev/cu.usbmodem2101 --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+arduino-cli upload -p /dev/cu.usbmodem2101 --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 
 # 4. console
 python3 scripts/serial_log.py --seconds 40            # timestamped
@@ -267,7 +331,8 @@ Interactive alternative when you are the only worker: `screen /dev/cu.usbmodem21
 uv run ultron export tflite                      # needs build/checkpoint.pt + build/features.npz
 uv run python scripts/gen_esp32_config.py        # reads build/labels.json for the frozen order
 uv run python scripts/gen_esp32_model.py         # embeds build/model_int8.tflite (placeholder=0)
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
+arduino-cli compile --libraries devices/esp32/libraries \
+  --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 ```
 
 `gen_esp32_config.py --check` and `gen_esp32_model.py --check` fail when a committed generated
@@ -278,7 +343,7 @@ following it.
 
 | Test | What it pins |
 |---|---|
-| `tests/test_esp32_state_machine.py` | the firmware's `state_machine.c` compiled on the host: FR-001…FR-008, FR-019, FR-037, Q-005, and the exact contract-line text |
-| `tests/test_esp32_features.py` | `features_core.c` (DC correction + shared MFCC + int8 quantization) against the host pipeline — **byte-identical** int8 tensor |
-| `tests/test_esp32_config.py` | generated `config.h` is current, complete, and threshold-free in the C sources |
+| `tests/test_esp32_state_machine.py` | the library's `ultron_state_machine.c` compiled on the host: FR-001…FR-008, FR-019, FR-037, Q-005, and the exact contract-line text |
+| `tests/test_esp32_features.py` | `ultron_features_core.c` + `mfcc.c` (DC correction + MFCC + int8 quantization) against the host pipeline — **byte-identical** int8 tensor |
+| `tests/test_esp32_config.py` | generated `ultron_config.h` is current and complete, no thresholds in C sources, and the vendored `mfcc.c` is byte-identical to `dsp/` |
 | `tests/test_dsp_parity.py` | per-frame MFCC parity (unchanged by the firmware work) |

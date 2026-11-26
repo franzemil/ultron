@@ -27,9 +27,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ESP32_DIR = REPO_ROOT / "devices/esp32/ultron_voice"
+ESP32_DIR = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src"  # the UltronVoice library now owns the state machine
 DRIVER = REPO_ROOT / "tests/esp32/sm_host_test.c"
-SOURCES = [ESP32_DIR / "state_machine.c"]
+SOURCES = [ESP32_DIR / "ultron_state_machine.c"]
 
 pytestmark = pytest.mark.skipif(
     shutil.which("cc") is None, reason="no host C compiler (cc) available"

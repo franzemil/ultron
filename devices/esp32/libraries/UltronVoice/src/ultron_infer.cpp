@@ -1,6 +1,6 @@
 /* infer — implementation. See infer.h. */
 
-#include "infer.h"
+#include "ultron_infer.h"
 
 #include <Arduino.h>
 #include <string.h>
@@ -11,7 +11,7 @@
 #include "tensorflow/lite/micro/micro_interpreter.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
-#include "features_core.h" /* ultron_transpose_int8_nwc_to_ncw() */
+#include "ultron_features_core.h" /* ultron_transpose_int8_nwc_to_ncw() */
 #include "model_data.h"    /* generated: g_model[] + ULTRON_MODEL_PLACEHOLDER */
 
 namespace ultron {

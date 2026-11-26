@@ -6,7 +6,7 @@
  * requirement mapping.
  */
 
-#include "state_machine.h"
+#include "ultron_state_machine.h"
 
 #include <stdio.h>
 #include <string.h>

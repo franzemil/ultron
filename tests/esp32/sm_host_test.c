@@ -19,7 +19,7 @@
  *   8. the command window starts at playback end                  [FR-019, NFR-010]
  *
  * Build/run (this is what the pytest wrapper does):
- *   cc -std=c99 -Wall -Wextra -I devices/esp32/ultron_voice \
+ *   cc -std=c99 -Wall -Wextra -I devices/esp32/libraries/UltronVoice/src \
  *      tests/esp32/sm_host_test.c devices/esp32/ultron_voice/state_machine.c \
  *      -o /tmp/sm_host_test && /tmp/sm_host_test
  */
@@ -27,7 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "config_sm.h"
+#include "ultron_config_sm.h"
 
 static int g_failures = 0;
 static char g_lines[16][96];

@@ -1,17 +1,14 @@
 /* features_core — implementation. See features_core.h. */
 
-#include "features_core.h"
+#include "ultron_features_core.h"
 
 #include <math.h>
 
-/* Compile the shared C MFCC library (dsp/mfcc.c, spec 001) straight into this
- * translation unit. arduino-cli only builds sources that live in the sketch
- * folder, and copying dsp/mfcc.c into the sketch would create a second source
- * of truth that could drift from the host pipeline. Including the repo source
- * makes the firmware and `ultron features` literally the same bytes — the
- * byte-for-byte parity guarantee (tests/test_dsp_parity.py) holds by
- * construction. mfcc.c includes "mfcc.h" relatively, which resolves to dsp/. */
-#include "../../../dsp/mfcc.c"
+/* The shared C MFCC library (spec 001) is vendored beside this file as mfcc.c /
+ * mfcc.h — byte-identical to dsp/mfcc.c, enforced by scripts/sync_ultronvoice.py and
+ * tests/test_esp32_config.py. A library must be self-contained (arduino-cli cannot
+ * reach outside a library's src/), and arduino-cli compiles mfcc.c as its own unit
+ * inside the library, so the symbols link normally from here. */
 
 double ultron_window_mean(const int16_t *samples, size_t n) {
   if (samples == NULL || n == 0) return 0.0;

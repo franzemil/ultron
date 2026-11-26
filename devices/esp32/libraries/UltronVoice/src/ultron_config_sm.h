@@ -11,8 +11,8 @@
 #ifndef ULTRON_CONFIG_SM_H
 #define ULTRON_CONFIG_SM_H
 
-#include "config.h"
-#include "state_machine.h"
+#include "ultron_config.h"
+#include "ultron_state_machine.h"
 
 #if ULTRON_NUM_COMMANDS > ULTRON_MAX_COMMANDS
 #error "config.h trains more commands than state_machine.h can hold (ULTRON_MAX_COMMANDS)"

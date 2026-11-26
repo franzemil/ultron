@@ -50,7 +50,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = REPO_ROOT / "build/placeholder"
-DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/ultron_voice/config.h"
+DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 
 # Deterministic placeholder knobs (recorded in the PR and in model_data.h).
 SEED = 42

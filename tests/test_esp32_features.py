@@ -31,11 +31,12 @@ import pytest
 from dsp.mfcc import Mfcc
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ESP32_DIR = REPO_ROOT / "devices/esp32/ultron_voice"
+ESP32_DIR = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src"  # the UltronVoice library now owns the feature pipeline
 DRIVER = REPO_ROOT / "tests/esp32/features_host_test.c"
-# features_core.c #includes the shared dsp/mfcc.c itself (one source of truth, no
-# duplicate copy in the sketch), so it must be the only source compiled here.
-SOURCES = [ESP32_DIR / "features_core.c"]
+# ultron_features_core.c includes mfcc.h; the vendored mfcc.c next to it is compiled
+# here as its own unit (that is exactly how the Arduino library build links it), and
+# scripts/sync_ultronvoice.py keeps it byte-identical to dsp/mfcc.c.
+SOURCES = [ESP32_DIR / "ultron_features_core.c", ESP32_DIR / "mfcc.c"]
 
 SAMPLE_RATE = 16000
 WINDOW_SAMPLES = 32000
@@ -191,7 +192,7 @@ def test_dc_correction_matches_numpy_rounding():
     probe_c.write_text(
         """
 #include <stdio.h>
-#include "features_core.h"
+#include "ultron_features_core.h"
 int main(void) {
     const int16_t in[6] = {0, 1, 2, -1, -2, 3};
     int16_t out[6];
@@ -209,7 +210,8 @@ int main(void) {
             "-std=c99",
             f"-I{ESP32_DIR}",
             str(probe_c),
-            str(ESP32_DIR / "features_core.c"),
+            str(ESP32_DIR / "ultron_features_core.c"),
+            str(ESP32_DIR / "mfcc.c"),
             "-lm",
             "-o",
             str(exe),
@@ -245,7 +247,7 @@ def test_nwc_to_ncw_transpose_matches_numpy(firmware_binary: Path, tmp_path):
         """
 #include <stdio.h>
 #include <stdlib.h>
-#include "features_core.h"
+#include "ultron_features_core.h"
 int main(int argc, char **argv) {
     if (argc != 4) return 2;
     const int frames = atoi(argv[1]);
@@ -269,7 +271,8 @@ int main(int argc, char **argv) {
         "-std=c99",
         f"-I{ESP32_DIR}",
         str(probe),
-        str(ESP32_DIR / "features_core.c"),
+        str(ESP32_DIR / "ultron_features_core.c"),
+        str(ESP32_DIR / "mfcc.c"),
         "-lm",
         "-o",
         str(exe),

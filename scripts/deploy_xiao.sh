@@ -26,6 +26,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKETCH="${REPO_ROOT}/devices/esp32/ultron_voice"
+LIBRARIES="${REPO_ROOT}/devices/esp32/libraries"  # UltronVoice (voice pipeline)
 FQBN="esp32:esp32:XIAO_ESP32S3"
 PORT="/dev/cu.usbmodem2101"
 LOCKFILE="/tmp/ultron-xiao.lock"
@@ -127,9 +128,9 @@ else
   if [[ "$SELFTEST" == "1" ]]; then LABEL=" [selftest]"; fi
   log "compile ${FQBN}${LABEL}"
   if [[ "$DRY_RUN" == "1" ]]; then
-    run arduino-cli compile --fqbn "$FQBN" $BUILD_PROP "$SKETCH"
+    run arduino-cli compile --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH"
   else
-    COMPILE_OUT="$(arduino-cli compile --fqbn "$FQBN" $BUILD_PROP "$SKETCH" 2>&1)" || {
+    COMPILE_OUT="$(arduino-cli compile --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH" 2>&1)" || {
       printf '%s\n' "$COMPILE_OUT" >&2
       die "compile failed — nothing was flashed" 3
     }
@@ -163,7 +164,7 @@ fi
 
 # ── 3. upload ───────────────────────────────────────────────────────────────
 log "flash → ${PORT}"
-if ! run arduino-cli upload -p "$PORT" --fqbn "$FQBN" $BUILD_PROP "$SKETCH"; then
+if ! run arduino-cli upload -p "$PORT" --libraries "$LIBRARIES" --fqbn "$FQBN" $BUILD_PROP "$SKETCH"; then
   die "upload failed. If esptool says 'No serial data received', the chip is hung:
    physical reset required. Do not retry in a loop." 4
 fi
