@@ -153,7 +153,7 @@ def test_artifacts_are_current():
 
 
 def test_bump_rules_are_patch_and_minor():
-    from scripts.gen_esp32_library import bump_version
+    from ultron.esp32lib import bump_version
 
     assert bump_version("0.1.0", "patch") == "0.1.1"
     assert bump_version("0.1.9", "patch") == "0.1.10"
@@ -162,6 +162,67 @@ def test_bump_rules_are_patch_and_minor():
 
 
 def test_library_properties_has_a_semver():
-    from scripts.gen_esp32_library import read_version
+    from ultron.esp32lib import read_version
 
     assert re.match(r"^\d+\.\d+\.\d+$", read_version())
+
+
+# ── `ultron esp32 lib` (cli/src/ultron/esp32lib.py) ──────────────────────────
+
+
+def test_cli_command_is_registered():
+    from typer.testing import CliRunner
+
+    from ultron.cli import app
+
+    runner = CliRunner()
+    for args in (["esp32", "--help"], ["esp32", "lib", "--help"]):
+        result = runner.invoke(app, args)
+        assert result.exit_code == 0, result.output
+    assert "lib" in runner.invoke(app, ["esp32", "--help"]).output
+
+
+def test_cli_reports_version_and_paths():
+    from typer.testing import CliRunner
+
+    from ultron.cli import app
+
+    result = CliRunner().invoke(app, ["esp32", "lib"])
+    assert result.exit_code == 0, result.output
+    assert "UltronVoice v" in result.output
+    assert "--check" in result.output and "--sync" in result.output
+
+
+def test_cli_check_passes_on_a_clean_tree():
+    from typer.testing import CliRunner
+
+    from ultron.cli import app
+
+    result = CliRunner().invoke(app, ["esp32", "lib", "--check"])
+    assert result.exit_code == 0, result.output
+    assert "no drift" in result.output
+
+
+def test_refresh_is_idempotent_when_nothing_changed():
+    """The refresh must be a no-op (no writes, no bump) when artifacts already match."""
+    from ultron import esp32lib
+
+    model = esp32lib.REPO_ROOT / "build/placeholder/model_int8.tflite"
+    if not model.is_file():
+        pytest.skip("placeholder flatbuffer not built (gitignored build/ artifact)")
+    before = esp32lib.read_version()
+    result = esp32lib.refresh(model=model, placeholder=True, bump=True)
+    assert result.changed_files == []
+    assert result.bumped is False
+    assert esp32lib.read_version() == before
+
+
+def test_refresh_bumps_minor_on_class_order_change(tmp_path):
+    """A frozen class-order change is a contract change: minor bump."""
+    from ultron import esp32lib
+
+    assert esp32lib.bump_version("0.1.4", "minor") == "0.2.0"
+    # class_order_of() is the single reader used by the bump decision
+    config = (esp32lib.LIB_SRC / "ultron_config.h").read_text()
+    order = esp32lib._class_order_of(config)
+    assert order[:2] == ["wake", "noise"]

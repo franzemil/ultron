@@ -173,13 +173,19 @@ functions keep one shared source of truth that every sketch can `#include` relat
 ## Artifacts → library version (one command)
 
 The board embeds a flatbuffer and a generated config, so "which firmware is this?" has to be
-answerable from the console. `gen_esp32_library.py` refreshes the library and bumps its version:
+answerable from the console. The CLI command refreshes the library and bumps its version:
 
 ```sh
-uv run python scripts/gen_esp32_library.py                  # real model (build/model_int8.tflite)
-uv run python scripts/gen_esp32_library.py --placeholder     # deterministic placeholder
-uv run python scripts/gen_esp32_library.py --check           # stale? exit 1 (deploy runs this)
+uv run ultron esp32 lib --check                 # stale? exit 1 (deploy_xiao.sh runs this)
+uv run ultron esp32 lib --sync                  # real model (build/model_int8.tflite)
+uv run ultron esp32 lib --sync --placeholder    # deterministic placeholder
+uv run ultron esp32 lib                         # version + path, no side effects
+uv run ultron esp32 lib --sync --no-bump        # refresh, keep the version
 ```
+
+`uv run python scripts/gen_esp32_library.py [--check|--placeholder|--no-bump]` is the same
+function without typer — the implementation lives in `cli/src/ultron/esp32lib.py`, so the CLI,
+the script and `ultron export tflite` share one code path (no second implementation).
 
 It writes `src/mfcc.{c,h}` (byte-identical to `dsp/`), `src/ultron_config.h`, `src/model_data.h`
 and `library.properties`, with these bump rules:

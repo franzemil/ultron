@@ -15,8 +15,6 @@ Exit codes:
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 import typer
@@ -121,26 +119,23 @@ def export_tflite_command(
     # is the real workflow; tests and ad-hoc exports opt in explicitly with --library.
     wants_library = library or (not no_library and out.resolve() == Path("build").resolve())
     if wants_library:
-        script = Path(__file__).resolve().parents[3] / "scripts/gen_esp32_library.py"
-        if not script.is_file():
-            typer.secho(
-                f"error: --library requested but {script} is missing (not in the repo?)",
-                fg=typer.colors.RED,
-            )
-            raise typer.Exit(code=2)
+        from . import esp32lib  # local import: keeps `ultron export` light
+
         typer.echo("")
         typer.secho("refreshing the UltronVoice Arduino library…", fg=typer.colors.CYAN)
-        proc = subprocess.run(
-            [sys.executable, str(script), "--model", str(result.int8_path)],
-            capture_output=True,
-            text=True,
-        )
-        typer.echo(proc.stdout.rstrip())
-        if proc.returncode != 0:
-            typer.secho(proc.stderr.rstrip(), fg=typer.colors.RED)
+        try:
+            refreshed = esp32lib.refresh(model=result.int8_path, bump=True)
+        except esp32lib.Esp32LibError as exc:
+            typer.secho(f"error: {exc}", fg=typer.colors.RED)
             typer.secho(
                 "error: the export succeeded but the library refresh failed — the board "
                 "would embed stale artifacts. Fix the library before flashing.",
                 fg=typer.colors.RED,
             )
-            raise typer.Exit(code=2)
+            raise typer.Exit(code=2) from exc
+        for line in refreshed.summary_lines():
+            typer.echo(line)
+        typer.secho(
+            f"UltronVoice v{refreshed.version_after} ready — next: ./scripts/deploy_xiao.sh",
+            fg=typer.colors.GREEN,
+        )
