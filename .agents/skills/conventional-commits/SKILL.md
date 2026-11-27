@@ -2,7 +2,7 @@
 name: conventional-commits
 description: >-
   Write commit messages and PR titles following Conventional Commits with
-  ultron-specific types and scopes (model, cli, dsp, esp32, orangepi, dataset,
+  ultron-specific types and scopes (model, cli, dsp, esp32, dataset,
   ei, bench, spec). Use whenever committing, creating PRs, amending messages,
   or reviewing git history in this repo.
 license: MIT
@@ -46,7 +46,7 @@ examples below override generic defaults.
 
 ## Scopes (match the repo layout)
 
-`model` · `cli` · `dsp` · `esp32` · `orangepi` · `dataset` · `ei` · `bench` · `spec`
+`model` · `cli` · `dsp` · `esp32` · `dataset` · `ei` · `bench` · `spec`
 
 Scope is optional for repo-wide changes (`dataset: …`, `bench: …` read naturally
 without one).
@@ -56,8 +56,7 @@ without one).
 ```
 feat(model): add per-class threshold sweep
 fix(esp32): guard PDM ring-buffer overflow on audio task starvation
-feat(pi): libgpiod output controller with 50 ms tick
-feat(pi): fail fast when no capture device is found
+feat(esp32): relay output controller with 50 ms tick
 feat(dsp): shared C MFCC with EI-parity vectors
 feat(cli): dataset ingest accepts external recordings (mic tag ext)
 dataset: record 24 originals per guiñador phrase (xiao + ext)

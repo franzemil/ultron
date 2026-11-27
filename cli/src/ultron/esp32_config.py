@@ -30,8 +30,8 @@ generated file depend on whether some unrelated test had written a report into
 ``build/`` — non-deterministic between machines.
 
 Usage:
-    uv run python scripts/gen_esp32_config.py            # write the header
-    uv run python scripts/gen_esp32_config.py --check    # fail on drift
+    uv run ultron esp32 config            # write the header
+    uv run ultron esp32 config --check    # fail on drift
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]  # repo root (cli/src/ultron/)
 DEFAULT_OUT = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 DEFAULT_THRESHOLDS = REPO_ROOT / "model/thresholds.json"
 DEFAULT_REGISTRY = REPO_ROOT / "model/registry.json"
@@ -178,10 +178,10 @@ def render(
     w(" * config.h — GENERATED FILE, DO NOT EDIT.")
     w(" *")
     w(" * Source of truth: model/thresholds.json (spec 002 Q-006) + model/registry.json")
-    w(" * (spec 001 T3), rendered by scripts/gen_esp32_config.py for spec 003 T12.")
+    w(" * (spec 001 T3), rendered by `uv run ultron esp32 config` for spec 003 T12.")
     w(" * Re-render after any threshold/registry change:")
     w(" *")
-    w(" *     uv run python scripts/gen_esp32_config.py")
+    w(" *     uv run ultron esp32 config")
     w(" *")
     w(" * CI guard: tests/test_esp32_config.py re-renders and fails on drift.")
     w(" *")
@@ -299,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         if current != text:
             print(
                 f"gen_esp32_config: {args.out} is stale — run "
-                "`uv run python scripts/gen_esp32_config.py`",
+                "`uv run ultron esp32 config`",
                 file=sys.stderr,
             )
             return 1

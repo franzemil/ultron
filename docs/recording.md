@@ -1,16 +1,16 @@
 # Recording — ultron WAV recorders (T4)
 
-Both candidate devices record **16 kHz / 16-bit / mono WAV** clips labeled by
-phrase, producing files that `ultron dataset validate` accepts
-(FR-021 / US-002 / NFR-005). Output naming follows the repo convention
-`{label}_{mic}_{nn}.wav` with `mic ∈ {xiao, pi, ext}`.
+The XIAO records **16 kHz / 16-bit / mono WAV** clips labeled by phrase, producing files that
+`ultron dataset validate` accepts (FR-021 / US-002 / NFR-005). Output naming follows the repo
+convention `{label}_{mic}_{nn}.wav` with `mic ∈ {xiao, ext}` — one target (owner decision
+2026-11-26), so there is no Pi tag any more; legacy `*_pi_*.wav` files are renamed with
+`uv run ultron dataset retag-pi <dir> --apply`.
 
 ## Devices
 
 | Device | Recorder | Mic | Storage |
 |--------|----------|-----|---------|
 | Seeed XIAO ESP32S3 Sense | `devices/esp32/wav_recorder/wav_recorder.ino` | built-in PDM | SD card |
-| Orange Pi Zero 2W | `devices/orangepi/record.py` | owner-supplied USB | filesystem |
 | Dev host (local) | `devices/local/record.py` | default input mic | filesystem |
 
 ## XIAO ESP32S3 Sense — `wav_recorder.ino`
@@ -30,27 +30,9 @@ Behavior:
 Label slugs are lowercase ASCII (`guiñador_derecho`, `luz_media`, …); the
 registry ids from `model/registry.json` are the canonical label set.
 
-## Orange Pi Zero 2W — `record.py`
-
-```bash
-python3 devices/orangepi/record.py <label> [--seconds 5] [--device DEVICE] [--out-dir DIR]
-```
-
-- `<label>`: phrase label slug (positional, required).
-- `--seconds`: capture duration (default 5).
-- `--device`: sounddevice input device index or name substring (owner USB mic).
-- `--out-dir`: output directory (default `.`).
-
-Writes `<label>_pi_<nn>.wav`. Fails fast (exit 2) listing detected capture
-devices when no microphone is present — no silent fallback to device 0
-(Q-003).
-
-Example:
-```bash
-python3 devices/orangepi/record.py guiñador_derecho --seconds 5 --out-dir dataset/originals/guiñador_derecho
 ## Dev host (local) — `record.py`
 
-Same interface as the Pi recorder, but uses the host's default input device:
+Same interface as the XIAO recorder, but uses the host's default input device:
 
 ```bash
 python3 devices/local/record.py <label> [--seconds 5] [--device DEVICE] [--out-dir DIR]
@@ -80,8 +62,8 @@ python3 devices/local/record.py guiñador_derecho --seconds 5 --out-dir dataset/
 The following require the physical devices and are **not** run here:
 
 - XIAO records a 5 s WAV to SD card and emits the `DONE` response (AC1).
-- Pi captures a real WAV from the owner USB microphone and `ultron dataset
-  validate` passes it (AC2 / AC3).
+- A capture from an owner-supplied mic (tagged `ext`) passes `ultron dataset validate`
+  (AC2 / AC3). The Pi half of US-002 was removed with the Pi target.
 
 These are consolidated in issue #10 (T7 — hardware validation). `docs/recording.md`
 is updated there with the measured results once T7 runs.
@@ -90,11 +72,11 @@ is updated there with the measured results once T7 runs.
 
 Files produced by these recorders are ready for `ultron dataset ingest`:
 - XIAO: `dataset/originals/<label>/<label>_xiao_<nn>.wav`
-- Pi:   `dataset/originals/<label>/<label>_pi_<nn>.wav`
 - local: `dataset/originals/<label>/<label>_local_<nn>.wav`
 - ext:  owner-supplied (phone/PC) recordings, tagged `ext`
+- legacy `*_pi_*.wav` → `uv run ultron dataset retag-pi <dir> --apply` (the `pi` tag is gone)
 
-NFR-005: ≥ 20 originals per accepted phrase variant, recorded from all mics (xiao, pi, local).
+NFR-005: ≥ 20 originals per accepted phrase variant, recorded from all mics (xiao, ext, local).
 
 ---
 

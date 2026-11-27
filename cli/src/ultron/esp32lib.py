@@ -8,7 +8,7 @@ library and which model it is running (``DBG boot fw=ultron_voice lib=0.1.1 …`
 Entry points (one implementation, three callers):
 
 * ``ultron esp32 lib``            — the CLI command in :mod:`ultron.cli`
-* ``uv run python scripts/gen_esp32_library.py``  — thin wrapper, used by docs/deploy
+* ``uv run ultron esp32 check``           — the pre-flash gate (`esp32 deploy` runs it)
 * ``ultron export tflite``        — refreshes automatically for ``--out build/``
 
 Bump rules (deterministic and idempotent):
@@ -19,8 +19,8 @@ config or model  patch + 1
 class order      minor + 1  (a consumer that hard-coded an index must notice)
 ===============  ===================================================================
 
-The two generators stay in ``scripts/`` (they are repo tooling, also used directly when
-regenerating headers); this module resolves the repository root the same way
+The two header generators are package modules (`ultron.esp32_config`, `ultron.esp32_model`)
+exposed as `ultron esp32 config|model`; this module resolves the repository root the same way
 :mod:`ultron.features` resolves ``dsp/`` for the ctypes MFCC binding.
 """
 
@@ -28,15 +28,17 @@ from __future__ import annotations
 
 import re
 import shutil
-import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import esp32_config, esp32_model
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LIB_DIR = REPO_ROOT / "devices" / "esp32" / "libraries" / "UltronVoice"
 LIB_PROPERTIES = LIB_DIR / "library.properties"
 LIB_SRC = LIB_DIR / "src"
-SCRIPTS_DIR = REPO_ROOT / "scripts"
+DSP_DIR = REPO_ROOT / "dsp"
+VENDORED_C = ("mfcc.c", "mfcc.h")
 
 VERSION_RE = re.compile(r"^version=(\d+)\.(\d+)\.(\d+)\s*$", re.MULTILINE)
 
@@ -46,17 +48,27 @@ class Esp32LibError(RuntimeError):
 
 
 def _generators():
-    """Import the two header generators from the repo's scripts/ directory."""
-    if not (SCRIPTS_DIR / "gen_esp32_config.py").is_file():
-        raise Esp32LibError(
-            f"repo tooling not found under {SCRIPTS_DIR} — run this from the ultron checkout"
-        )
-    if str(SCRIPTS_DIR) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS_DIR))
-    import gen_esp32_config  # noqa: PLC0415 — resolved at call time (repo tooling)
-    import gen_esp32_model  # noqa: PLC0415
+    """The two header generators (same package — no path tricks, no scripts/ coupling)."""
+    return esp32_config, esp32_model
 
-    return gen_esp32_config, gen_esp32_model
+
+def vendored_sources_stale() -> list[str]:
+    """``src/mfcc.c|h`` must be byte-identical to ``dsp/`` — the library is self-contained
+    (arduino-cli only builds a library's own src/), so the copy is vendored, not referenced."""
+    stale = []
+    for name in VENDORED_C:
+        master, copy = DSP_DIR / name, LIB_SRC / name
+        if not copy.is_file() or copy.read_bytes() != master.read_bytes():
+            stale.append(name)
+    return stale
+
+
+def sync_vendored_sources() -> list[str]:
+    copied = []
+    for name in VENDORED_C:
+        shutil.copyfile(DSP_DIR / name, LIB_SRC / name)
+        copied.append(name)
+    return copied
 
 
 def read_version(path: Path = LIB_PROPERTIES) -> str:
@@ -175,10 +187,7 @@ def check(*, model: Path | None = None, placeholder: bool = False,
     if _current(LIB_SRC / "ultron_config.h") != config_text:
         problems.append("ultron_config.h")
 
-    for name in ("mfcc.c", "mfcc.h"):
-        master, copy = REPO_ROOT / "dsp" / name, LIB_SRC / name
-        if not copy.is_file() or copy.read_bytes() != master.read_bytes():
-            problems.append(name)
+    problems.extend(vendored_sources_stale())
 
     model_path = _model_path(model, placeholder)
     if model_path.is_file():
@@ -217,7 +226,7 @@ def refresh(
     if not model_path.is_file():
         raise Esp32LibError(
             f"model not found: {model_path} — build the placeholder "
-            "(`uv run python scripts/gen_esp32_placeholder.py --placeholder`) or run "
+            "(`uv run ultron esp32 placeholder`) or run "
             "`uv run ultron export tflite`"
         )
 
@@ -227,11 +236,7 @@ def refresh(
 
     config_stale = _current(LIB_SRC / "ultron_config.h") != config_text
     model_stale = _current(LIB_SRC / "model_data.h") != model_text
-    mfcc_stale = any(
-        not (LIB_SRC / name).is_file()
-        or (LIB_SRC / name).read_bytes() != (REPO_ROOT / "dsp" / name).read_bytes()
-        for name in ("mfcc.c", "mfcc.h")
-    )
+    mfcc_stale = bool(vendored_sources_stale())
 
     result = RefreshResult(
         version_before=version,
@@ -261,8 +266,7 @@ def refresh(
         config_text = _render_config(labels)  # the header embeds the new version
         model_text = _render_model(model_path, placeholder)
 
-    for name in ("mfcc.c", "mfcc.h"):
-        shutil.copyfile(REPO_ROOT / "dsp" / name, LIB_SRC / name)
+    sync_vendored_sources()
     (LIB_SRC / "ultron_config.h").write_text(config_text, encoding="utf-8")
     (LIB_SRC / "model_data.h").write_text(model_text, encoding="utf-8")
     result.changed_files = ["mfcc.c", "mfcc.h", "ultron_config.h", "model_data.h"]

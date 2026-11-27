@@ -80,7 +80,7 @@ def _write_archive(path, n, classes, seed=42):
 
 @requires_conversion
 def test_conversion_smoke_random_model(tmp_path):
-    """Risk mitigation: prove the ONNX → onnx2tf → int8/fp16 path on random weights.
+    """Risk mitigation: prove the ONNX → onnx2tf → int8 path on random weights.
 
     Uses T8's real ``KwsNet`` architecture with a fixed seed and spread logits
     so argmax is robust to int8 rounding; asserts all artifacts, the frozen
@@ -96,7 +96,6 @@ def test_conversion_smoke_random_model(tmp_path):
 
     assert (tmp_path / "model.onnx").is_file()
     assert (tmp_path / "model_int8.tflite").is_file()
-    assert (tmp_path / "model_fp16.tflite").is_file()
     assert (tmp_path / "labels.json").is_file()
     assert (tmp_path / "parity_report.md").is_file()
 
@@ -104,7 +103,6 @@ def test_conversion_smoke_random_model(tmp_path):
     assert read_labels_json(tmp_path / "labels.json") == LABELS
     assert result.gate_passed
     assert result.int8_agreement >= PARITY_THRESHOLD
-    assert result.fp16_agreement >= PARITY_THRESHOLD
     assert result.versions["torch"] != "not installed"
 
     # this architecture is tiny by design — well inside the NFR-002 flash budget
@@ -208,14 +206,11 @@ def test_report_renders_gate_labels_sizes_and_parity(tmp_path):
         labels=LABELS,
         onnx_path=tmp_path / "model.onnx",
         int8_path=tmp_path / "model_int8.tflite",
-        fp16_path=tmp_path / "model_fp16.tflite",
         labels_path=tmp_path / "labels.json",
         report_path=tmp_path / "parity_report.md",
         onnx_bytes=12_586,
         int8_bytes=9_232,
-        fp16_bytes=15_272,
         int8_agreement=0.9975,
-        fp16_agreement=1.0,
         n_parity=400,
         threshold=PARITY_THRESHOLD,
         versions={"python": "3.12.9", "torch": "2.15.0"},
@@ -225,7 +220,7 @@ def test_report_renders_gate_labels_sizes_and_parity(tmp_path):
     assert ", ".join(LABELS) in report
     assert "order check: OK" in report
     assert "9.0 KB" in report and "≤ 100.0 KB" in report and "PASS" in report
-    assert "99.75%" in report and "100.00%" in report
+    assert "99.75%" in report
     assert "torch" in report
     assert result.gate_passed and result.int8_within_budget
 
@@ -236,14 +231,11 @@ def test_report_renders_fail_verdict_on_gate_miss(tmp_path):
         labels=LABELS,
         onnx_path=tmp_path / "model.onnx",
         int8_path=tmp_path / "model_int8.tflite",
-        fp16_path=tmp_path / "model_fp16.tflite",
         labels_path=tmp_path / "labels.json",
         report_path=tmp_path / "parity_report.md",
         onnx_bytes=12_586,
         int8_bytes=9_232,
-        fp16_bytes=15_272,
         int8_agreement=0.98,
-        fp16_agreement=1.0,
         n_parity=100,
         threshold=PARITY_THRESHOLD,
         versions=dependency_versions(),
@@ -362,7 +354,35 @@ def test_cli_export_deps_missing_exit_three(tmp_path, monkeypatch):
 
 
 @requires_conversion
-def test_cli_export_tflite_end_to_end(tmp_path):
+class _StubRefresh:
+    """Stand-in for esp32lib.refresh(): records the call, touches no files."""
+
+    version_after = "0.0.0-stub"
+
+    def summary_lines(self):
+        return ["UltronVoice v0.0.0-stub (stubbed in tests)"]
+
+
+@pytest.fixture
+def stub_library_refresh(monkeypatch):
+    """Export always refreshes the UltronVoice library; tests must not touch the repo copy.
+
+    The stub also *asserts the contract*: every successful `ultron export tflite` calls
+    esp32lib.refresh() exactly once with the int8 flatbuffer it just produced.
+    """
+    import ultron.esp32lib as esp32lib
+
+    calls: list = []
+
+    def _fake_refresh(*, model=None, placeholder=False, labels=None, bump=True):
+        calls.append({"model": model, "bump": bump})
+        return _StubRefresh()
+
+    monkeypatch.setattr(esp32lib, "refresh", _fake_refresh)
+    return calls
+
+
+def test_cli_export_tflite_end_to_end(tmp_path, stub_library_refresh):
     """`ultron export tflite` on a T8-format checkpoint + T7-format archive."""
     import torch
 
@@ -400,10 +420,12 @@ def test_cli_export_tflite_end_to_end(tmp_path):
     assert "labels (frozen order)" in result.output
     assert "model_int8.tflite" in result.output
     assert (out / "model_int8.tflite").stat().st_size > 0
-    assert (out / "model_fp16.tflite").stat().st_size > 0
     report = (out / "parity_report.md").read_text()
     assert "**Gate: PASS**" in report
     assert read_labels_json(out / "labels.json") == LABELS
+    # the library refresh is not optional: exactly one call, on this export's flatbuffer
+    assert len(stub_library_refresh) == 1, stub_library_refresh
+    assert stub_library_refresh[0]["model"] == out / "model_int8.tflite"
 
 
 @requires_conversion
@@ -424,7 +446,7 @@ def test_export_fails_when_checkpoint_disagrees_with_archive(tmp_path):
 
 
 @requires_conversion
-def test_export_gold_path_trained_model(tmp_path):
+def test_export_gold_path_trained_model(tmp_path, stub_library_refresh):
     """Full chain on real artifacts: fixtures → `ultron features` → `ultron
     train run` → `ultron export tflite` — the trained checkpoint passes the
     gate (T8's own smoke pattern, extended through T9)."""
@@ -493,3 +515,15 @@ def test_export_gold_path_trained_model(tmp_path):
     assert exported.exit_code == 0, exported.output
     assert read_labels_json(build / "labels.json") == LABELS
     assert "**Gate: PASS**" in (build / "parity_report.md").read_text()
+    assert len(stub_library_refresh) == 1, stub_library_refresh
+
+
+def test_export_produces_int8_only():
+    """Single target: no float16 artifact, no Pi consumer (owner decision 2026-11-26)."""
+    import dataclasses
+
+    from ultron_model.export import ExportResult
+
+    fields = {f.name for f in dataclasses.fields(ExportResult)}
+    assert "int8_path" in fields and "int8_bytes" in fields
+    assert not {f for f in fields if f.startswith("fp16")}

@@ -13,10 +13,9 @@ dsp/                      # "ears": shared C MFCC — the ONE feature implementa
 model/                    # "brain": PyTorch package — model.py, train.py, export.py
                           #   + registry.json, thresholds.json (versioned configs)
 cli/                      # tooling: uv package — src/ultron/ Typer CLI
-                          #   (dataset, augment, features, bench, deploy, ei sync)
+                          #   (dataset, augment, features, esp32, export, ei sync)
 devices/
-  esp32/                  # XIAO ESP32S3: ultron_voice/ sketch + wav_recorder/
-  orangepi/               # Orange Pi: ultron_pi.py runtime, record.py, dsp .so Makefile
+  esp32/                  # XIAO ESP32S3: ultron_voice/ sketch + libraries/UltronVoice/
 tests/                    # pytest, mirrors all components
 docs/                     # topic docs: model.md, retraining.md, bench.md, troubleshooting.md
 dataset/                  # gitignored — never commit audio

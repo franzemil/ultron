@@ -78,7 +78,7 @@ enforced from spec 002 onward. `model/thresholds.json` is introduced in spec 002
 `dsp/mfcc.{h,c}` — the only MFCC implementation in the repo (principle 2), compiled three ways:
 
 1. **Firmware**: compiled directly into `devices/esp32/ultron_voice/` (spec 003).
-2. **Pi runtime**: built as a shared library, loaded via `ctypes` (`devices/orangepi/`, spec 003).
+2. ~~**Pi runtime**: built as a shared library, loaded via `ctypes` (`devices/orangepi/`, spec 003).~~ *(withdrawn 2026-11-26: Pi out of scope)*
 3. **Training**: built on the host, invoked by `ultron features` (numpy wrapper, spec 002) —
    training features come from the same bytes (lampara-aliz lesson, elevated to a principle).
 

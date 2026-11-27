@@ -2,7 +2,7 @@
 
 ``devices/esp32/ultron_voice/config.h`` is generated from ``model/thresholds.json``
 (spec 002 Q-006) + ``model/registry.json`` (spec 001 T3) by
-``scripts/gen_esp32_config.py`` and committed so a clean checkout compiles. These
+``uv run ultron esp32 config`` and committed so a clean checkout compiles. These
 tests fail loudly if the committed header drifts from its sources — the operating
 point must never be edited by hand in C (T12 checklist), and the firmware must
 never silently keep an old threshold after a retrain.
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.gen_esp32_config import (
+from ultron.esp32_config import (
     ConfigError,
     DEFAULT_OUT,
     DEFAULT_REGISTRY,
@@ -33,7 +33,7 @@ CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
 
 
 def read_config() -> str:
-    assert CONFIG.is_file(), f"{CONFIG} is missing — run scripts/gen_esp32_config.py"
+    assert CONFIG.is_file(), f"{CONFIG} is missing — run `uv run ultron esp32 config`"
     return CONFIG.read_text(encoding="utf-8")
 
 
@@ -127,17 +127,17 @@ def test_missing_thresholds_file_is_a_clear_error(tmp_path):
 
 def test_library_mfcc_copies_are_byte_identical():
     """The library vendors dsp/mfcc.c; drift must fail loudly (same bytes as the host)."""
-    from scripts.sync_ultronvoice import main as sync_main
+    from ultron import esp32lib
 
-    assert sync_main(["--check"]) == 0
+    assert esp32lib.vendored_sources_stale() == []
 
 
-# ── library versioning (scripts/gen_esp32_library.py) ────────────────────────
+# ── library versioning (cli/src/ultron/esp32lib.py) ───────────────────────────
 
 
 def test_library_version_is_in_the_generated_header():
     """A flashed board must be able to say which library/model it is running."""
-    from scripts.gen_esp32_config import read_library_version
+    from ultron.esp32_config import read_library_version
 
     version = read_library_version()
     assert re.match(r"^\d+\.\d+\.\d+$", version), version
@@ -147,9 +147,10 @@ def test_library_version_is_in_the_generated_header():
 
 def test_artifacts_are_current():
     """--check: the committed library agrees with model/ (deploy refuses to flash otherwise)."""
-    from scripts.gen_esp32_library import main as library_main
+    from ultron import esp32lib
 
-    assert library_main(["--check"]) == 0
+    ok, problems, _notes = esp32lib.check()
+    assert ok, problems
 
 
 def test_bump_rules_are_patch_and_minor():
@@ -167,40 +168,10 @@ def test_library_properties_has_a_semver():
     assert re.match(r"^\d+\.\d+\.\d+$", read_version())
 
 
-# ── `ultron esp32 lib` (cli/src/ultron/esp32lib.py) ──────────────────────────
-
-
-def test_cli_command_is_registered():
-    from typer.testing import CliRunner
-
-    from ultron.cli import app
-
-    runner = CliRunner()
-    for args in (["esp32", "--help"], ["esp32", "lib", "--help"]):
-        result = runner.invoke(app, args)
-        assert result.exit_code == 0, result.output
-    assert "lib" in runner.invoke(app, ["esp32", "--help"]).output
-
-
-def test_cli_reports_version_and_paths():
-    from typer.testing import CliRunner
-
-    from ultron.cli import app
-
-    result = CliRunner().invoke(app, ["esp32", "lib"])
-    assert result.exit_code == 0, result.output
-    assert "UltronVoice v" in result.output
-    assert "--check" in result.output and "--sync" in result.output
-
-
-def test_cli_check_passes_on_a_clean_tree():
-    from typer.testing import CliRunner
-
-    from ultron.cli import app
-
-    result = CliRunner().invoke(app, ["esp32", "lib", "--check"])
-    assert result.exit_code == 0, result.output
-    assert "no drift" in result.output
+# ── library refresh (cli/src/ultron/esp32lib.py) ──────────────────────────────
+# The refresh has no CLI command of its own: `ultron export tflite` always performs it
+# (cli/src/ultron/export.py); `ultron esp32 check` is the gate deploy runs before a flash
+# without typer, which is what deploy_xiao.sh runs before every flash.
 
 
 def test_refresh_is_idempotent_when_nothing_changed():
@@ -217,12 +188,10 @@ def test_refresh_is_idempotent_when_nothing_changed():
     assert esp32lib.read_version() == before
 
 
-def test_refresh_bumps_minor_on_class_order_change(tmp_path):
+def test_class_order_reader_is_the_bump_input():
     """A frozen class-order change is a contract change: minor bump."""
     from ultron import esp32lib
 
     assert esp32lib.bump_version("0.1.4", "minor") == "0.2.0"
-    # class_order_of() is the single reader used by the bump decision
     config = (esp32lib.LIB_SRC / "ultron_config.h").read_text()
-    order = esp32lib._class_order_of(config)
-    assert order[:2] == ["wake", "noise"]
+    assert esp32lib._class_order_of(config)[:2] == ["wake", "noise"]

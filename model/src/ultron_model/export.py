@@ -6,7 +6,6 @@ Pipeline (design.md §Export pipeline, TD-002):
 2. ``onnx2tf`` → float SavedModel (TensorFlow is build-time-only)
 3. full-int8 quantization (``TFLITE_BUILTINS_INT8``, int8 in/out) with training
    features as the representative dataset → ``build/model_int8.tflite`` (XIAO)
-4. float16 → ``build/model_fp16.tflite`` (Pi)
 5. parity report ``build/parity_report.md`` — PyTorch vs int8 argmax agreement
    must be ≥ 99% or the export FAILS (FR-011, NFR-007)
 6. frozen class order echoed into the report and ``build/labels.json``
@@ -211,14 +210,11 @@ class ExportResult:
     labels: list[str]
     onnx_path: Path
     int8_path: Path
-    fp16_path: Path
     labels_path: Path
     report_path: Path
     onnx_bytes: int
     int8_bytes: int
-    fp16_bytes: int
     int8_agreement: float
-    fp16_agreement: float
     n_parity: int
     threshold: float
     versions: dict[str, str] = field(default_factory=dict)
@@ -251,7 +247,6 @@ def render_parity_report(result: ExportResult) -> str:
         "|---|---|---|---|---|",
         f"| `model_int8.tflite` | XIAO (flash) | {format_bytes(result.int8_bytes)} "
         f"| ≤ {format_bytes(INT8_FLASH_BUDGET_BYTES)} | {int8_status} |",
-        f"| `model_fp16.tflite` | Orange Pi | {format_bytes(result.fp16_bytes)} | — | — |",
         f"| `model.onnx` | intermediate | {format_bytes(result.onnx_bytes)} | — | — |",
         "",
         "> NFR-002 confirmation on-device (TFLM arena ≤ 150 KB) is spec 003's T12/T13 —",
@@ -263,7 +258,6 @@ def render_parity_report(result: ExportResult) -> str:
         "|---|---|---|---|",
         f"| int8 full-quant (int8 in/out) | {result.int8_agreement:.2%} "
         f"| {result.n_parity} | ≥ {result.threshold:.2%} — {'PASS' if result.gate_passed else 'FAIL'} |",
-        f"| float16 | {result.fp16_agreement:.2%} | {result.n_parity} | — |",
         "",
         "## Versions",
         "",
@@ -401,7 +395,7 @@ def export_tflite(
 ) -> ExportResult:
     """Export a trained model to int8 + float16 TFLite with the parity gate.
 
-    Writes ``model.onnx``, ``model_int8.tflite``, ``model_fp16.tflite``,
+    Writes ``model.onnx``, ``model_int8.tflite``,
     ``labels.json`` and ``parity_report.md`` under ``out_dir``. Raises
     :class:`ParityGateError` when the PyTorch-vs-int8 argmax agreement is below
     ``threshold`` (default 99%, FR-011 / NFR-007) — artifacts and the report
@@ -488,24 +482,15 @@ def export_tflite(
     int8_converter.inference_output_type = tf.int8
     int8_bytes = int8_converter.convert()
 
-    # 4. float16 variant
-    fp16_converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model_dir))
-    fp16_converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    fp16_converter.target_spec.supported_types = [np.float16]
-    fp16_bytes = fp16_converter.convert()
-
-    int8_path, fp16_path = out_dir / "model_int8.tflite", out_dir / "model_fp16.tflite"
+    int8_path = out_dir / "model_int8.tflite"
     int8_path.write_bytes(int8_bytes)
-    fp16_path.write_bytes(fp16_bytes)
 
     # 5. parity — PyTorch vs int8 on a deterministic sample of the archive
     parity_idx = sample_indices(len(features), max_parity)
     parity_features = features[parity_idx]
     torch_scores = _predict_torch(model, parity_features)
     int8_scores = _run_tflite(int8_bytes, parity_features)
-    fp16_scores = _run_tflite(fp16_bytes, parity_features)
     int8_agreement = argmax_agreement(torch_scores, int8_scores)
-    fp16_agreement = argmax_agreement(torch_scores, fp16_scores)
 
     # 6. frozen label order → labels.json (+ build/labels.json order check)
     labels_path = write_labels_json(frozen, out_dir / "labels.json")
@@ -516,14 +501,11 @@ def export_tflite(
         labels=frozen,
         onnx_path=onnx_path,
         int8_path=int8_path,
-        fp16_path=fp16_path,
         labels_path=labels_path,
         report_path=out_dir / "parity_report.md",
         onnx_bytes=onnx_path.stat().st_size,
         int8_bytes=len(int8_bytes),
-        fp16_bytes=len(fp16_bytes),
         int8_agreement=int8_agreement,
-        fp16_agreement=fp16_agreement,
         n_parity=len(parity_idx),
         threshold=threshold,
         versions=dependency_versions(),

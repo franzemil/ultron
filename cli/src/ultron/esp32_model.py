@@ -27,9 +27,9 @@ Guards (fail loud, never emit a header that cannot work):
   when tensorflow is available, and at boot otherwise.
 
 Usage:
-    uv run python scripts/gen_esp32_placeholder.py          # make the placeholder
-    uv run python scripts/gen_esp32_model.py --placeholder
-    uv run python scripts/gen_esp32_model.py --model build/model_int8.tflite \
+    uv run ultron esp32 placeholder          # make the placeholder
+    uv run ultron esp32 model --placeholder
+    uv run ultron esp32 model --model build/model_int8.tflite \
         --provenance "spec 002 T9 trained artifact"
 """
 
@@ -41,7 +41,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]  # repo root (cli/src/ultron/)
 DEFAULT_MODEL = REPO_ROOT / "build/model_int8.tflite"
 DEFAULT_OUT = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/model_data.h"
 DEFAULT_CONFIG = REPO_ROOT / "devices/esp32/libraries/UltronVoice/src/ultron_config.h"
@@ -67,7 +67,7 @@ def read_config_classes(config_path: Path) -> list[str]:
     """Extract ULTRON_CLASS_NAMES from the generated config.h (single source)."""
     if not config_path.is_file():
         raise ModelDataError(
-            f"{config_path} not found — run `uv run python scripts/gen_esp32_config.py` first"
+            f"{config_path} not found — run `uv run ultron esp32 config` first"
         )
     text = config_path.read_text(encoding="utf-8")
     match = re.search(r"ULTRON_CLASS_NAMES\[[^\]]*\]\s*=\s*\{([^}]*)\}", text)
@@ -141,7 +141,7 @@ def render(
     w(" * Embedded TFLite-Micro flatbuffer for devices/esp32/ultron_voice (T12).")
     w(" * Regenerate with:")
     w(" *")
-    w(" *     uv run python scripts/gen_esp32_model.py")
+    w(" *     uv run ultron esp32 model")
     w(" *")
     w(f" * model        : {display_path}")
     w(f" * model sha256 : {sha}")
@@ -192,7 +192,7 @@ def generate(
 ) -> str:
     if not model_path.is_file():
         raise ModelDataError(
-            f"model not found: {model_path} — run `uv run python scripts/gen_esp32_placeholder.py` "
+            f"model not found: {model_path} — run `uv run ultron esp32 placeholder` "
             "(placeholder) or `uv run ultron export tflite` (trained artifact)"
         )
     model_bytes = model_path.read_bytes()
@@ -233,7 +233,7 @@ def generate(
         current = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
         if current != text:
             raise ModelDataError(
-                f"{out_path} is stale — regenerate with scripts/gen_esp32_model.py"
+                f"{out_path} is stale — regenerate with `uv run ultron esp32 model`"
             )
     return text
 

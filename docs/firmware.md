@@ -76,7 +76,7 @@ void loop() {
 **The relay layer is not in this sketch and must not be.** FR-009 / FR-017 / NFR-009 belong to
 **T15** (PR #40): `devices/esp32/ultron_voice/outputs.{h,cpp}` implements all seven Actuation
 Behavior Contract behaviours behind a `ChannelSink` (reusable by spec 006's companion and spec
-005's Pi), and `pins.h` owns the pin map with a wired/unwired flag per channel. The sketch's
+005), and `pins.h` owns the pin map with a wired/unwired flag per channel. The sketch's
 `onCommand()` is the seam where that engine is constructed over the real GPIOs — one source of
 truth for the channel contract, no second pin table, no second luz hierarchy.
 
@@ -91,7 +91,7 @@ the clip and the 5 s window starts at its end (FR-019/NFR-010) — the sketch on
 audio when it receives the event.
 
 An Arduino library must be self-contained (arduino-cli builds only the library's own `src/`), so
-`src/mfcc.c` is a **vendored copy** of `dsp/mfcc.c`. `scripts/sync_ultronvoice.py --check` fails
+`src/mfcc.c` is a **vendored copy** of `dsp/mfcc.c`. `ultron esp32 check` fails
 on any drift and `tests/test_esp32_config.py` runs it, so the firmware cannot silently run an old
 MFCC while the host pipeline moved on.
 
@@ -173,19 +173,20 @@ functions keep one shared source of truth that every sketch can `#include` relat
 ## Artifacts → library version (one command)
 
 The board embeds a flatbuffer and a generated config, so "which firmware is this?" has to be
-answerable from the console. The CLI command refreshes the library and bumps its version:
+answerable from the console, and the library must never lag the model. There is **no separate
+command for that**: `ultron export tflite` always refreshes and versions the library (see below).
+
+The same refresh is available without an export — for a threshold-only change, or when the
+placeholder is what you want embedded — through the script that shares the implementation
+(`cli/src/ultron/esp32lib.py`):
 
 ```sh
-uv run ultron esp32 lib --check                 # stale? exit 1 (deploy_xiao.sh runs this)
-uv run ultron esp32 lib --sync                  # real model (build/model_int8.tflite)
-uv run ultron esp32 lib --sync --placeholder    # deterministic placeholder
-uv run ultron esp32 lib                         # version + path, no side effects
-uv run ultron esp32 lib --sync --no-bump        # refresh, keep the version
+uv run ultron esp32 check                 # stale? exit 1 (deploy runs this)
+uv run ultron esp32 placeholder && uv run ultron esp32 model --placeholder           # embed the placeholder + bump
+uv run ultron esp32 config  # header-only change               # refresh, keep the version
 ```
 
-`uv run python scripts/gen_esp32_library.py [--check|--placeholder|--no-bump]` is the same
-function without typer — the implementation lives in `cli/src/ultron/esp32lib.py`, so the CLI,
-the script and `ultron export tflite` share one code path (no second implementation).
+`uv run ultron esp32 deploy` runs `--check` before compiling, so a stale library cannot be flashed.
 
 It writes `src/mfcc.{c,h}` (byte-identical to `dsp/`), `src/ultron_config.h`, `src/model_data.h`
 and `library.properties`, with these bump rules:
@@ -202,10 +203,10 @@ The version is compiled in (`ULTRON_LIBRARY_VERSION`) and printed at boot:
 DBG boot fw=ultron_voice lib=0.1.1 task=T12 console_only=1 classes=4 cmds=2 window_ms=5000
 ```
 
-`ultron export tflite` runs the same refresh automatically when `--out` is the default `build/`
-(so a fresh export can never leave the board on stale artifacts), and `--library` / `--no-library`
-force or suppress it. `scripts/deploy_xiao.sh` runs `--check` before compiling and refuses to
-build firmware whose embedded artifacts disagree with `model/`.
+`ultron export tflite` **always** refreshes and versions the library — every export, whatever
+`--out` says, with no opt-out: an export can never leave the board on stale artifacts. Tests
+stub `esp32lib.refresh()` rather than weakening this guarantee. `uv run ultron esp32 deploy` runs `--check`
+before compiling and refuses to build firmware whose embedded artifacts disagree with `model/`.
 
 ## Model
 
@@ -214,8 +215,8 @@ build firmware whose embedded artifacts disagree with `model/`.
 
 ```sh
 uv sync --extra export                               # onnx2tf + tensorflow (heavy, one-off)
-uv run python scripts/gen_esp32_placeholder.py       # deterministic PLACEHOLDER, see below
-uv run python scripts/gen_esp32_model.py --placeholder
+uv run ultron esp32 placeholder       # deterministic PLACEHOLDER, see below
+uv run ultron esp32 model --placeholder
 ```
 
 **What is embedded right now: a PLACEHOLDER, not the spec-002 artifact.**
@@ -314,11 +315,11 @@ state machine and the contract on hardware; it does **not** prove recognition.
 **One command** (compiles → preflight → flashes → optionally captures):
 
 ```sh
-./scripts/deploy_xiao.sh                     # compile + flash
-./scripts/deploy_xiao.sh --listen 40         # …and save 40 s of console to /tmp/ultron-xiao-logs/
-./scripts/deploy_xiao.sh --selftest --listen 40   # scripted-score build (real EVT lines)
-./scripts/deploy_xiao.sh --compile-only      # build only — port untouched, safe while others flash
-./scripts/deploy_xiao.sh --dry-run           # print what it would run, execute nothing
+uv run ultron esp32 deploy                    # compile + flash
+uv run ultron esp32 deploy --listen 40        # …and save 40 s of console to /tmp/ultron-xiao-logs/
+uv run ultron esp32 deploy --selftest --listen 40  # scripted-score build (real EVT lines)
+uv run ultron esp32 deploy --compile-only     # build only — port untouched, safe while others flash
+uv run ultron esp32 deploy --dry-run          # print what it would run, execute nothing
 ```
 
 The script encodes the rules that are easy to get wrong by hand:
@@ -338,9 +339,9 @@ when the file is currently held by someone else (`Whether you then proceed is yo
 Use it when T14/T15/T28 are active:
 
 ```sh
-./scripts/deploy_xiao.sh --lock --listen 40
+./uv run ultron esp32 deploy --lock --listen 40
 # equivalent by hand (macOS lockf takes a command, not a string — there is no -c):
-lockf -k /tmp/ultron-xiao.lock /bin/sh -c './scripts/deploy_xiao.sh --listen 40'
+lockf -k /tmp/ultron-xiao.lock /bin/sh -c './uv run ultron esp32 deploy --listen 40'
 ```
 
 ### By hand, if you prefer
@@ -351,19 +352,19 @@ arduino-cli compile --libraries devices/esp32/libraries \
   --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 
 # 2. is the chip alive? (read-only; exit 1 = zero bytes = hung)
-python3 scripts/serial_log.py --seconds 5 --quiet; echo "exit=$?"
+uv run ultron esp32 console --seconds 5 --quiet; echo "exit=$?"
 
 # 3. flash (bootloader 0x0, partitions 0x8000, boot_app0 0xe000, app 0x10000)
 arduino-cli upload -p /dev/cu.usbmodem2101 --libraries devices/esp32/libraries \
   --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 
 # 4. console
-python3 scripts/serial_log.py --seconds 40            # timestamped
-python3 scripts/serial_log.py --seconds 60 --evt-only  # contract lines only
-python3 scripts/serial_log.py --seconds 40 --raw > /tmp/xiao.log
+uv run ultron esp32 console --seconds 40            # timestamped
+uv run ultron esp32 console --seconds 60 --evt-only  # contract lines only
+uv run ultron esp32 console --seconds 40 --raw > /tmp/xiao.log
 ```
 
-`scripts/serial_log.py` is stdlib-only (`termios`) because pyserial is not installed; it exits
+``ultron esp32 console`` is stdlib-only (`termios`) because pyserial is not installed; it exits
 non-zero when the port stays silent, so callers never mistake "no bytes" for "no events".
 Interactive alternative when you are the only worker: `screen /dev/cu.usbmodem2101 115200`
 (quit with `Ctrl-A K`) — but `screen` takes the port without any lock discipline.
@@ -372,8 +373,8 @@ Interactive alternative when you are the only worker: `screen /dev/cu.usbmodem21
 
 ```sh
 uv run ultron export tflite                      # needs build/checkpoint.pt + build/features.npz
-uv run python scripts/gen_esp32_config.py        # reads build/labels.json for the frozen order
-uv run python scripts/gen_esp32_model.py         # embeds build/model_int8.tflite (placeholder=0)
+uv run ultron esp32 config        # reads build/labels.json for the frozen order
+uv run ultron esp32 model         # embeds build/model_int8.tflite (placeholder=0)
 arduino-cli compile --libraries devices/esp32/libraries \
   --fqbn esp32:esp32:XIAO_ESP32S3 devices/esp32/ultron_voice
 ```

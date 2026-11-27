@@ -17,9 +17,9 @@ command recognition, actuation — runs **on-device**, with no cloud dependency.
 2. The previous project (`lampara-aliz`) proved on-device keyword spotting works on a XIAO
    ESP32S3 via Edge Impulse, but locked the model pipeline to the EI platform. Ultron owns the
    whole pipeline: **local PyTorch training as the source of truth**, exported to TFLite.
-3. The maker wants to know **which device wins** — a microcontroller (XIAO ESP32S3 Sense) or a
-   Linux SBC (Orange Pi Zero 2W) — for always-on voice, measured with a repeatable benchmark,
-   not vibes.
+3. The maker wants always-on voice on a **microcontroller** (XIAO ESP32S3 Sense) — no Linux SBC in
+   the loop (owner decision 2026-11-26: Orange Pi Zero 2W removed from scope), so there is one
+   runtime to tune and one behaviour to trust.
 
 ## Who it is for
 

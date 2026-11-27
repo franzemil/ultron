@@ -15,11 +15,18 @@ from rich.console import Console
 
 from .augment import AUGMENTED_DIR, DATASET_ROOT, ORIGINALS_DIR, plan_augmentations, run_plan
 from .config import config
-from . import esp32lib
-from .esp32lib import Esp32LibError
+from .esp32_commands import esp32_app
 from .export import export_app
 from .logging import logger, setup_logging
-from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
+from ultron.dataset import (
+    REGISTRY_IDS,
+    dc_fix,
+    export_zip,
+    import_zip,
+    ingest,
+    retag_pi,
+    validate,
+)
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
@@ -54,12 +61,8 @@ synth_app = typer.Typer(
 app.add_typer(synth_app, name="synth")
 app.add_typer(train_app, name="train")
 app.add_typer(export_app, name="export")
-
-esp32_app = typer.Typer(
-    name="esp32",
-    help="XIAO ESP32S3 firmware artifacts: the UltronVoice Arduino library (T12/T15).",
-)
 app.add_typer(esp32_app, name="esp32")
+
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
@@ -214,6 +217,21 @@ def dataset_dcfix(
     dc_fix(path=path)
 
 
+@dataset.command(name="retag-pi")
+def dataset_retag_pi(
+    path: str = typer.Argument("dataset", help="Dataset directory to migrate."),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually rename (default: dry run, prints what would change)."
+    ),
+) -> None:
+    """Rename legacy *_pi_*.wav recordings to the 'ext' mic tag (Pi recorder retired)."""
+    stats = retag_pi(path, apply=apply)
+    verb = "renamed" if apply else "would rename"
+    typer.echo(f"{verb} {stats['renamed']} file(s); {stats['skipped']} skipped (target exists)")
+    if not apply and stats["renamed"]:
+        typer.echo("re-run with --apply to commit the renames")
+
+
 @dataset.command(name="export")
 def dataset_export(
     path: str = typer.Argument("dataset", help="Dataset directory to zip (default dataset/)."),
@@ -281,79 +299,18 @@ def features_command(
     typer.echo(f"archive sha256: {summary['sha256']} ({summary['bytes']} bytes)")
 
 
-@esp32_app.command(name="lib")
-def esp32_lib(
-    sync: bool = typer.Option(
-        False,
-        "--sync",
-        help="Rewrite the library from model/ (mfcc copies, ultron_config.h, model_data.h) "
-        "and bump library.properties when anything changed.",
-    ),
-    check: bool = typer.Option(
-        False,
-        "--check",
-        help="Verify only: exit 1 when the committed library is stale (what deploy_xiao.sh runs).",
-    ),
-    placeholder: bool = typer.Option(
-        False, "--placeholder", help="Use the deterministic placeholder flatbuffer (no trained model)."
-    ),
-    model: Optional[Path] = typer.Option(
-        None, "--model", "-m", help="Flatbuffer to embed (default: build/model_int8.tflite, or "
-        "the placeholder with --placeholder)."
-    ),
-    labels: Optional[Path] = typer.Option(
-        None, "--labels", help="Frozen class order (build/labels.json); default: derive."
-    ),
-    bump: bool = typer.Option(
-        True, "--bump/--no-bump", help="Bump the version when artifacts change (default: bump)."
+@app.command(name="clean")
+def clean_command(
+    dry_run: bool = typer.Option(False, "--dry-run", help="List targets, remove nothing."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="No prompt (CI / non-interactive)."),
+    uv_cache: bool = typer.Option(
+        False, "--uv-cache", help="Also clear the shared global uv cache (affects other projects)."
     ),
 ) -> None:
-    """Refresh or verify the UltronVoice Arduino library (the model the board embeds).
+    """Remove build/test byproducts (.venv, build/, __pycache__, …) — never source or data."""
+    from .clean import clean
 
-    Syncing is idempotent: nothing changed → no bump and no writes. Bump rules:
-    config/model bytes → patch, frozen class order → minor.
-    """
-    if not (sync or check):
-        typer.echo(
-            f"UltronVoice v{esp32lib.read_version()} @ {esp32lib.LIB_DIR}\n"
-            "  --check  verify against model/ (exit 1 when stale)\n"
-            "  --sync   rewrite the library and bump the version"
-        )
-        return
-
-    try:
-        if check:
-            ok, problems, notes = esp32lib.check(
-                model=model, placeholder=placeholder, labels=labels
-            )
-            for note in notes:
-                typer.secho(f"note: {note}", fg=typer.colors.YELLOW)
-            if not ok:
-                typer.secho(
-                    f"UltronVoice is STALE ({', '.join(problems)}) — run "
-                    "`uv run ultron esp32 lib --sync`",
-                    fg=typer.colors.RED,
-                )
-                raise typer.Exit(code=1)
-            typer.secho(
-                f"UltronVoice v{esp32lib.read_version()} matches model/ (no drift)",
-                fg=typer.colors.GREEN,
-            )
-            return
-
-        result = esp32lib.refresh(
-            model=model, placeholder=placeholder, labels=labels, bump=bump
-        )
-        for line in result.summary_lines():
-            typer.echo(line)
-        if result.bumped:
-            typer.secho(
-                f"bumped to v{result.version_after} — next: ./scripts/deploy_xiao.sh",
-                fg=typer.colors.GREEN,
-            )
-    except Esp32LibError as exc:
-        typer.secho(f"error: {exc}", fg=typer.colors.RED)
-        raise typer.Exit(code=2) from exc
+    raise typer.Exit(code=clean(dry_run=dry_run, assume_yes=yes, uv_cache=uv_cache))
 
 
 @app.command(name="config")
