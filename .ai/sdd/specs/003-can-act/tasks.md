@@ -128,13 +128,23 @@ is off the path — it runs once the hardware is live.
 
 ### Stage B — Relays minimal (2 channels, direct on XIAO)
 
-### T15 — Output controller: 2 relay channels on XIAO spare pins (2 h)
+### T15 — Output controller: 2 relay channels on XIAO spare pins (2 h) ✅
 - Covers: FR-009, FR-017, NFR-009. Deps: T12, spec 001 T3 (registry). Priority: Must.
-- Checklist: wire the 2-channel relay sub-board per the design wiring (LM on D5/GPIO6, LB on
-  D8/GPIO7; active-LOW inputs with pull-ups to 3V3, coils on external 5 V, common GND); implement
-  the steady/luz-hierarchy engine over those channels (`lm` → LM; `lb` → LM + LB; `la` → LB + LM
-  with `DBG out=la state=unwired`); boot-safe outputs (NFR-009); `DBG out=` lines. The 9-channel
-  companion stack is **out of scope here** (spec 006).
+- [x] Wire the 2-channel relay sub-board per the design wiring (LM on D5/GPIO6, LB on D8/GPIO7;
+      active-LOW inputs with pull-ups to 3V3, coils on external 5 V, common GND); bench wiring in
+      `docs/wiring.md`
+- [x] Implement the steady/luz-hierarchy engine over those channels (`lm` → LM; `lb` → LM + LB;
+      `la` → LB + LM with `DBG out=la state=unwired`), plus the contract engines spec 006 reuses
+      (`blink_45s`, `blink_until_cancel`, `cancel`, `motor_45s`, `pulse_2s`, `pulse_05s`)
+- [x] Boot-safe outputs (NFR-009): external pull-ups + explicit OFF at init, active-LOW, fail-safe
+      OFF on `EVT ERROR`
+- [x] `DBG out=` lines for every channel change; 50 ms non-blocking output tick (`esp_timer`,
+      independent of the ~100 ms blocking capture read)
+- [x] Host proof for the behaviours the trained 4-class model cannot reach yet
+      (`tests/esp32/outputs_engine_test.cpp`, run by `tests/test_esp32_outputs.py`)
+- [ ] On-device Verify line — **open**: relays/wiring must be proven with a real `DBG out=` capture
+      on the bench (the board is reserved for a coordinated capture session; nothing flashed yet).
+- The 9-channel companion stack is **out of scope here** (spec 006).
 - Likely files: `devices/esp32/ultron_voice/outputs.{h,cpp}`, `devices/esp32/ultron_voice/pins.h`,
   `docs/wiring.md`.
 - Verify: `lb` command → LM + LB steady ON per registry; `la` command → LB + LM steady ON
