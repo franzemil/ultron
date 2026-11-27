@@ -8,6 +8,10 @@
 > `dataset: …`) — see the `@conventional-commits` skill in `.agents/skills/`.
 > This file is never hand-edited (bot commits only).
 
+## 2026-11-27
+- feat(cli)!: esp32 pipeline in the CLI — scripts/ deleted, Orange Pi removed (#42) — @franzemil
+- feat(esp32): firmware core — console-only inference on XIAO (#38) — @franzemil
+
 ## 2026-11-21
 - spec(003): approve requirements, design and tasks gates (#34) — @franzemil
 
