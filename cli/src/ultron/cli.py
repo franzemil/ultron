@@ -299,20 +299,6 @@ def features_command(
     typer.echo(f"archive sha256: {summary['sha256']} ({summary['bytes']} bytes)")
 
 
-@app.command(name="clean")
-def clean_command(
-    dry_run: bool = typer.Option(False, "--dry-run", help="List targets, remove nothing."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="No prompt (CI / non-interactive)."),
-    uv_cache: bool = typer.Option(
-        False, "--uv-cache", help="Also clear the shared global uv cache (affects other projects)."
-    ),
-) -> None:
-    """Remove build/test byproducts (.venv, build/, __pycache__, …) — never source or data."""
-    from .clean import clean
-
-    raise typer.Exit(code=clean(dry_run=dry_run, assume_yes=yes, uv_cache=uv_cache))
-
-
 @app.command(name="config")
 def config_info() -> None:
     """Show whether the Edge Impulse key is configured (value hidden)."""
