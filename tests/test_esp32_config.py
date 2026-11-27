@@ -96,14 +96,32 @@ def test_class_order_starts_with_wake_and_noise():
 
 
 def test_registry_channels_are_carried_for_the_output_layer():
-    """T15 consumes behavior/channels from the same generated header."""
+    """T15 consumes behavior/channels from the same generated header.
+
+    The output controller builds its command table from ``ULTRON_COMMANDS[]``
+    (``devices/esp32/ultron_voice/outputs_config.h``), so the emitted rows must be
+    exactly the registry's values for the trained commands — id, behavior and the
+    channels CSV in registry order — and no untrained command may sneak in.
+    """
     registry = load_registry(DEFAULT_REGISTRY)
     by_id = {cmd["id"]: cmd for cmd in registry["commands"]}
+    trained = list(load_thresholds(DEFAULT_THRESHOLDS)["commands"])
+
     text = read_config()
-    for cmd_id in load_thresholds(DEFAULT_THRESHOLDS)["commands"]:
-        channels = ",".join(by_id[cmd_id]["channels"])
-        assert f'"{channels}"' in text
-        assert f'"{by_id[cmd_id]["behavior"]}"' in text
+    match = re.search(r"ULTRON_COMMANDS\[[^\]]*\]\s*=\s*\{(.*?)\n\};", text, re.S)
+    assert match, "ULTRON_COMMANDS not found in the generated header"
+    rows = re.findall(
+        r'\{\s*"([^"]*)",\s*"([^"]*)",\s*(-?\d+),\s*([0-9.]+f),\s*([0-9.]+f),\s*"([^"]*)",'
+        r'\s*"([^"]*)"\s*,?\s*\}',
+        match.group(1),
+    )
+    assert [row[0] for row in rows] == trained, (
+        "ULTRON_COMMANDS must list exactly the trained commands, in thresholds order"
+    )
+    for cmd_id, _sigla, _class_index, _threshold, _margin, behavior, channels in rows:
+        entry = by_id[cmd_id]
+        assert behavior == entry["behavior"], f"{cmd_id}: behavior drifted from the registry"
+        assert channels == ",".join(entry["channels"]), f"{cmd_id}: channels drifted"
 
 
 def test_unknown_trained_command_fails_loudly(tmp_path):
