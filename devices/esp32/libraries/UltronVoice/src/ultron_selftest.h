@@ -25,9 +25,16 @@
  *   win 5   lb   0.91 (cmd, ≥0.8+0.1)     → EVT CMD id=lb
  *   win 8   wake 0.92                     → EVT WAKE (second cycle)
  *   win ~18 nothing above threshold       → EVT TIMEOUT (5 s after wake)
+ *   win 20  wake 0.93                     → EVT WAKE (third cycle, T15)
+ *   win 23  la   0.92                     → EVT CMD id=la (T15: LM + LB, LA unwired)
  * Windows 0..1, 3..4, 6..7, 9.. are quiet (noise-dominant, below every gate) so
  * the log also shows the machine staying silent (FR-006) and never emitting a
  * command outside the window (FR-005).
+ *
+ * The `la` cycle is what T15 (relays) verifies against: the trained model cannot
+ * say "luz alta" yet, so the only honest way to drive `EVT CMD id=la` on the
+ * bench is this scripted score line — the event formatting and the output
+ * controller path are the real ones.
  */
 
 #ifndef ULTRON_SELFTEST_H
@@ -43,14 +50,17 @@ struct Step {
   float conf;      /* winning score */
 };
 
-/* One quiet window + the three accepted steps. */
+/* Quiet window, then one accepted wake + command per cycle: lb (T12 contract
+ * proof) and la (T15: drives two wired channels and one unwired one). */
 static const Step kScript[] = {
     {2u, ULTRON_WAKE_CLASS, 0.94f},
     {5u, 2 /* lb */, 0.91f},
     {8u, ULTRON_WAKE_CLASS, 0.92f},
+    {20u, ULTRON_WAKE_CLASS, 0.93f},
+    {23u, 3 /* la */, 0.92f},
 };
 static const uint32_t kScriptLen = sizeof(kScript) / sizeof(kScript[0]);
-static const uint32_t kQuietUntilWindow = 18u; /* ~5 s after the second WAKE */
+static const uint32_t kQuietUntilWindow = 24u; /* past the la step (win 23) */
 
 /* Fill `scores` (ULTRON_NUM_CLASSES entries) for window `index`.
  * Returns true while the script is still running. */
