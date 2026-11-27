@@ -15,9 +15,18 @@ from rich.console import Console
 
 from .augment import AUGMENTED_DIR, DATASET_ROOT, ORIGINALS_DIR, plan_augmentations, run_plan
 from .config import config
+from .esp32_commands import esp32_app
 from .export import export_app
 from .logging import logger, setup_logging
-from ultron.dataset import REGISTRY_IDS, ingest, validate, dc_fix, export_zip, import_zip
+from ultron.dataset import (
+    REGISTRY_IDS,
+    dc_fix,
+    export_zip,
+    import_zip,
+    ingest,
+    retag_pi,
+    validate,
+)
 from ultron.record import record_command
 from ultron.record_long import record_long_command
 from ultron.split import _phrase_for, _registry, split_command
@@ -52,6 +61,8 @@ synth_app = typer.Typer(
 app.add_typer(synth_app, name="synth")
 app.add_typer(train_app, name="train")
 app.add_typer(export_app, name="export")
+app.add_typer(esp32_app, name="esp32")
+
 app.command(name="record")(record_command)
 app.command(name="record-long")(record_long_command)
 app.command(name="split")(split_command)
@@ -206,6 +217,21 @@ def dataset_dcfix(
     dc_fix(path=path)
 
 
+@dataset.command(name="retag-pi")
+def dataset_retag_pi(
+    path: str = typer.Argument("dataset", help="Dataset directory to migrate."),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually rename (default: dry run, prints what would change)."
+    ),
+) -> None:
+    """Rename legacy *_pi_*.wav recordings to the 'ext' mic tag (Pi recorder retired)."""
+    stats = retag_pi(path, apply=apply)
+    verb = "renamed" if apply else "would rename"
+    typer.echo(f"{verb} {stats['renamed']} file(s); {stats['skipped']} skipped (target exists)")
+    if not apply and stats["renamed"]:
+        typer.echo("re-run with --apply to commit the renames")
+
+
 @dataset.command(name="export")
 def dataset_export(
     path: str = typer.Argument("dataset", help="Dataset directory to zip (default dataset/)."),
@@ -271,6 +297,20 @@ def features_command(
         typer.echo(f"  {label}: {n_clips} clips / {summary['rows_per_label'][label]} windows")
     typer.echo(f"split hash:    {summary['split_hash']}")
     typer.echo(f"archive sha256: {summary['sha256']} ({summary['bytes']} bytes)")
+
+
+@app.command(name="clean")
+def clean_command(
+    dry_run: bool = typer.Option(False, "--dry-run", help="List targets, remove nothing."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="No prompt (CI / non-interactive)."),
+    uv_cache: bool = typer.Option(
+        False, "--uv-cache", help="Also clear the shared global uv cache (affects other projects)."
+    ),
+) -> None:
+    """Remove build/test byproducts (.venv, build/, __pycache__, …) — never source or data."""
+    from .clean import clean
+
+    raise typer.Exit(code=clean(dry_run=dry_run, assume_yes=yes, uv_cache=uv_cache))
 
 
 @app.command(name="config")

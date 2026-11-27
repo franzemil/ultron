@@ -17,7 +17,7 @@ produced directly:
 | **ONNX** (`torch.onnx.export`) | pin at implementation | The **bridge**. PyTorch cannot emit TFLite directly, so the model is first exported to ONNX — the standard, framework-neutral interchange format. Our model uses only Conv1d/Dense/pooling/softmax, all fully supported, so this step is lossless. |
 | **onnx2tf** | pin at implementation | The **converter**: turns the ONNX file into TFLite. Chosen because it is the maintained, standard path (the old `onnx-tensorflow` project is deprecated) and handles shape inference automatically. |
 | **TensorFlow** (build-time only) | pin at implementation | onnx2tf internally relies on TensorFlow libraries to *generate* the TFLite file and compute the int8 quantization ranges. Treat it as part of the **compiler toolchain**, not the product: it never trains anything and never runs on either device. |
-| **TFLite** (artifacts) | — | The single deployable format both targets consume: the XIAO's TFLite-Micro loads the **int8** flatbuffer; the Pi interpreter loads the **float16/int8** one. Both artifacts come from the same PyTorch checkpoint (FR-010). |
+| **TFLite** (artifacts) | — | The single deployable format: TFLite-Micro on the XIAO loads the **int8** flatbuffer produced by `ultron export tflite` (FR-010). No float16 variant: with one target there is no second runtime to feed. |
 | **uv** | latest | Python environment manager (same as lampara-aliz): one lockfile reproduces the exact training environment on any machine — reproducibility is NFR-006. |
 
 **Why not just train in TensorFlow** (as lampara-aliz did)? Two reasons: the owner explicitly
@@ -31,13 +31,12 @@ anything deploys.
 | Target | Runtime | Why |
 |---|---|---|
 | **XIAO ESP32S3 Sense** (ESP32-S3, PDM mic, PSRAM) | TFLite-Micro (Arduino/ESP32 core via `arduino-cli`) | Proven in lampara-aliz: int8 flatbuffers with `AllOpsResolver` run comfortably on the S3. Exact TFLM Arduino library is validated by an early spike (design TD-004). |
-| **Orange Pi Zero 2W** (Allwinner H618, ARM64 Cortex-A53, Debian 12) | Python `tflite_runtime` + `sounddevice` | Official aarch64 interpreter wheel; audio capture with a USB mic. Full TensorFlow only as fallback if the wheel is unavailable. |
 
 ## DSP
 
 | Choice | Why |
 |---|---|
-| **Shared C MFCC library** (`dsp/`), one implementation compiled three ways: into XIAO firmware, into the Pi runtime (ctypes), and into the training feature extractor | The single most important lesson from lampara-aliz: training features must be computed by the **same code** that runs at inference, or accuracy silently rots. Parameters ported from the Edge Impulse MFCC that already works there (13 coefficients, 16 kHz, int16 input). |
+| **Shared C MFCC library** (`dsp/`), one implementation compiled three ways: into XIAO firmware and into the training feature extractor | The single most important lesson from lampara-aliz: training features must be computed by the **same code** that runs at inference, or accuracy silently rots. Parameters ported from the Edge Impulse MFCC that already works there (13 coefficients, 16 kHz, int16 input). |
 
 ## Data tooling
 
@@ -56,4 +55,3 @@ anything deploys.
 ## Dev host
 
 macOS arm64. Firmware builds via `arduino-cli` + `esp32:esp32` core (same as lampara-aliz).
-Pi software is cross-checked by running it on the Pi itself (aarch64).

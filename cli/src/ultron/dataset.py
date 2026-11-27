@@ -9,8 +9,11 @@ import sys
 import wave
 from pathlib import Path
 
-# Mic source tags allowed on `dataset ingest` (FR-020).
-VALID_MICS = {"xiao", "pi", "ext"}
+# Mic source tags allowed on `dataset ingest` (FR-020). ESP32-only scope (owner decision,
+# 2026-11-26): the Orange Pi recorder and its "pi" tag are gone; "ext" covers any non-XIAO
+# capture. Legacy *_pi_*.wav files are migrated with `ultron dataset retag-pi`.
+VALID_MICS = {"xiao", "ext"}
+LEGACY_MICS = {"pi": "ext"}
 
 # Label slug rule: lowercase ASCII, must start with a letter (label slugs).
 LABEL_RE = re.compile(r"^[a-z][a-z0-9]*$")
@@ -379,3 +382,29 @@ def import_zip(zip_path, dest="dataset", force=False):
             imported += 1
     print(f"imported {imported} file(s) into {dest} ({overwritten} overwritten)")
     return dest, imported
+
+
+def retag_pi(root: str | Path, *, apply: bool = False) -> dict[str, int]:
+    """Migrate legacy ``<label>_pi_<nn>.wav`` names to the ``ext`` mic tag.
+
+    The Orange Pi recorder was removed (owner decision 2026-11-26) and ``pi`` is no longer
+    a valid mic tag, so existing Pi recordings would fail validation. Renaming keeps the
+    data usable instead of silently invalidating it.
+
+    Returns ``{"renamed": n, "skipped": m}``; with ``apply=False`` nothing is touched
+    (dry run), which is the CLI default.
+    """
+    root_path = Path(root)
+    if not root_path.is_dir():
+        _fail(f"dataset directory not found: {root_path}")
+    renamed = 0
+    skipped = 0
+    for wav in sorted(root_path.rglob("*_pi_*.wav")):
+        target = wav.with_name(wav.name.replace("_pi_", "_ext_", 1))
+        if target.exists():
+            skipped += 1
+            continue
+        if apply:
+            wav.rename(target)
+        renamed += 1
+    return {"renamed": renamed, "skipped": skipped}

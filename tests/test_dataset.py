@@ -94,3 +94,36 @@ def test_registry_rejects_bad(tmp_path):
     ok, errors = validate_registry(bad)
     assert not ok
     assert errors
+
+
+# ── single-target scope: the "pi" mic tag is retired (owner decision 2026-11-26) ──
+
+
+def test_pi_is_not_a_valid_mic_tag():
+    from ultron.dataset import LEGACY_MICS, VALID_MICS
+
+    assert "pi" not in VALID_MICS
+    assert VALID_MICS == {"xiao", "ext"}
+    assert LEGACY_MICS["pi"] == "ext"
+
+
+def test_retag_pi_renames_legacy_recordings(tmp_path):
+    """Existing *_pi_*.wav data must stay usable after the Pi target was removed."""
+    from ultron.dataset import retag_pi
+
+    label_dir = tmp_path / "originals" / "lb"
+    label_dir.mkdir(parents=True)
+    legacy = label_dir / "lb_pi_03.wav"
+    legacy.write_bytes(b"RIFF")
+    clash = label_dir / "lb2_pi_01.wav"
+    clash.write_bytes(b"RIFF")
+    (label_dir / "lb2_ext_01.wav").write_bytes(b"RIFF")  # target already exists
+
+    # dry run touches nothing: one renameable, one blocked by an existing target
+    assert retag_pi(tmp_path) == {"renamed": 1, "skipped": 1}
+    assert legacy.is_file() and clash.is_file()
+
+    assert retag_pi(tmp_path, apply=True) == {"renamed": 1, "skipped": 1}
+    assert (label_dir / "lb_ext_03.wav").is_file()
+    assert not legacy.exists()
+    assert clash.is_file()  # skipped: lb2_ext_01.wav already there

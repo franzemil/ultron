@@ -1,5 +1,12 @@
 # Requirements — 003 Can Act (Milestone 3)
 
+> **Scope amendment (owner decision, 2026-11-26): the Orange Pi Zero 2W is removed from the
+> project.** This is now a single-target (XIAO ESP32S3 Sense) product: the Pi runtime, its
+> recorder and the cross-target benchmark are gone (specs `004-can-decide` and
+> `005-archived` deleted, `devices/orangepi/` removed, fp16 export dropped). Pi clauses
+> below are kept for history — FR/NFR/US IDs are global and are never renumbered, so
+> withdrawn items stay visible and marked rather than silently deleted.
+
 > Part of the ultron system. Siblings: [001-can-hear](../001-can-hear/) (data pipeline + shared
 > system context — read it first), [002-can-think](../002-can-think/) (model artifacts),
 > [004-can-decide](../004-can-decide/) (bench), [005-archived](../005-archived/) (EI sync).
@@ -12,7 +19,7 @@ state machine, audio feedback) implementing the two-stage interaction — wake o
 "Escuchando" playback → 5 s command window → event + short confirmation clip → timeout — with
 **2 relay channels driven directly from the XIAO** (LM + LB) for the minimal trained command set
 (`la`, `lb`). Every accepted wake speaks ("Escuchando") and every executed command plays a short
-fixed confirmation clip. **Scope decisions (owner, 2026-11-21):** the Orange Pi runtime and the
+fixed confirmation clip. **Scope decisions (owner, 2026-11-21, and 2026-11-26: Pi withdrawn):** the Orange Pi runtime and the
 cross-target comparison live in the **final phase (spec 005)**; the 9-channel companion ESP32-S3
 SuperMini stack, the remaining relay channels, and the per-command rollout live in
 **spec 006-can-act-full**. This milestone is staged: **Stage A** deploys the minimal 4-class
@@ -27,7 +34,7 @@ recording pass (US-002, moved from spec 001 — owner decision, 2026-11-19).
 2. Wake acceptance is confirmed audibly with "Escuchando" and every executed command with a short
    confirmation clip.
 3. Timing tolerances and boot-safe outputs on the XIAO; the Target Event Contract stays
-   target-agnostic so the Pi (spec 005) and the companion stack (spec 006) implement it unchanged.
+   target-agnostic so the companion stack (spec 006) can implement it unchanged (the Pi form is withdrawn).
 4. The XIAO side of the device-mic recording pass (US-002, moved from spec 001) produces valid
    training clips.
 
@@ -38,7 +45,7 @@ recording pass (US-002, moved from spec 001 — owner decision, 2026-11-19).
 - No WiFi/remote control; actuation is local (relay/GPIO).
 - **No companion ESP32-S3 SuperMini and no 9-channel stack** (spec 006-can-act-full — owner
   decision 2026-11-21).
-- **No Orange Pi runtime and no cross-target parity** (spec 005, final phase — owner decision
+- **No Orange Pi runtime and no cross-target parity** (spec 005 deleted — owner decision 2026-11-26;
   2026-11-21).
 
 ## User Stories
@@ -76,7 +83,7 @@ implemented here as T28 using the spec 001 T4 recorder utilities.)*
 
 **Acceptance criteria:**
 - **AC1:** An accepted "hey ultron" plays the fixed "Escuchando" clip through the speaker with a
-  deterministic trigger and timing (the same asset is used unchanged when the Pi arrives in spec
+  deterministic trigger and timing (the same asset would be reused unchanged if a second target ever
   005).
 - **AC2:** The 5 s command window starts when playback ends; a command spoken right after the
   clip is accepted (US-001 AC1 still passes end-to-end with playback on).
@@ -86,7 +93,7 @@ implemented here as T28 using the spec 001 T4 recorder utilities.)*
 
 **FR-001 (Must)** — WHEN a wake phrase scores ≥ wake threshold on the wake stage,
 THE SYSTEM SHALL enter command-listening state within 1.5 s of the end of the utterance
-(the Pi's tighter 1.0 s budget is specified with its runtime in spec 005).
+(a second target's tighter budget would be specified with its own runtime; the Pi is withdrawn).
 
 **FR-002 (Must)** — WHILE in command-listening state, THE SYSTEM SHALL evaluate incoming audio
 against the trained command set for up to 5 s (recognized labels = trained subset — FR-013/FR-032,
@@ -107,7 +114,7 @@ THE SYSTEM SHALL remain in wake-listening.
 **FR-007 (Must)** — THE SYSTEM SHALL perform all inference on-device with no network dependency.
 
 **FR-008 (Must)** — THE SYSTEM SHALL emit events over the Target Event Contract. The contract is
-target-agnostic; this milestone implements the XIAO serial form (the Pi JSON form lands in spec
+target-agnostic; this milestone implements the XIAO serial form (the Pi JSON form is withdrawn with
 005 with its runtime).
 
 **FR-009 (Must)** — WHEN a command event is emitted, THE SYSTEM SHALL drive its mapped relay
@@ -165,7 +172,7 @@ phrases per command: the bare action name and the "enciende" variant (e.g. *"luz
 ## Non-Functional Requirements
 
 **NFR-001 (Latency)** — single 1 s-equivalent window inference: ≤ 400 ms on the XIAO ESP32S3 @
-240 MHz (the Pi's ≤ 200 ms budget is specified with its runtime in spec 005). End-to-end wake
+240 MHz (a second target's tighter budget would be specified with its runtime; the Pi is withdrawn). End-to-end wake
 reaction per FR-001.
 
 **NFR-002 (Memory, XIAO)** — int8 model ≤ 100 KB; TFLM arena ≤ 150 KB; firmware fits the
@@ -182,7 +189,7 @@ without a command event.
 **NFR-010 (Feedback latency)** — "Escuchando" playback starts ≤ 200 ms after wake acceptance and
 lasts ≤ 500 ms; the command-confirmation clip starts ≤ 200 ms after command acceptance and lasts
 ≤ 300 ms; end-of-utterance → command-listening stays within FR-001's budget (≤ 1.5 s on the
-XIAO). The same budgets apply unchanged when the Pi arrives (spec 005).
+XIAO).
 
 ## Constraints (this milestone)
 
@@ -222,7 +229,7 @@ timeout returns to wake-listening.
 A: **Resolved, staged.** This milestone (003): **≤ 2 relay channels driven directly from the
 XIAO** — LM + LB wired (the `lb` command drives both per registry; the `la` command drives LB+LM
 of its three channels, LA landing in spec 006). The full **9-channel stack on the companion
-ESP32-S3 SuperMini** (FR-038, TD-012) lives in spec 006-can-act-full; the Pi's libgpiod path
+ESP32-S3 SuperMini** (FR-038, TD-012) lives in spec 006-can-act-full; the Pi's libgpiod path is withdrawn
 lives in spec 005.
 
 **Q-011: How does a wiper output stop?**
@@ -233,7 +240,7 @@ one; re-selecting the same speed restarts it. Registry behavior: `motor_45s`.
 
 **Q-012: How does the device say "Escuchando"?**
 A: **Resolved.** One Spanish-TTS WAV (16 kHz/16-bit/mono, ≤ 500 ms, silence-trimmed) committed
-to the repo; the XIAO streams it via I2S to a MAX98357A amp + speaker (the Pi plays the same
+to the repo; the XIAO streams it via I2S to a MAX98357A amp + speaker (a second target would play the same
 asset through a USB audio dongle from spec 005). Trigger = wake acceptance; the 5 s command
 window starts at playback end (FR-019, NFR-010). Executed commands play the second fixed clip
 `assets/comando.wav` (≤ 300 ms, FR-037). No other spoken feedback in v1. **XIAO path validated on

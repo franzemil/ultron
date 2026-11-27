@@ -2,9 +2,10 @@
 
 Ultron: Spanish voice-actuation **car manager** — always-on **"hey ultron"** wake word, then a
 command phrase (e.g. *"enciende guiñador derecho"*) within a 5 s listening window, driving
-9 relay channels (LM LB LA GD GI LPB LPA A CC). One PyTorch → TFLite
-pipeline deployed to two candidate devices: **Seeed XIAO ESP32S3 Sense** and **Orange Pi Zero 2W**;
-a benchmark decides which one ships. **Source of truth is this repo — Edge Impulse is export-only.**
+9 relay channels (LM LB LA GD GI LPB LPA A CC). One PyTorch → TFLite-Micro pipeline on a
+**single target — the Seeed XIAO ESP32S3 Sense** (owner decision 2026-11-26: the Orange Pi Zero 2W
+is out of scope and its code is removed). **Source of truth is this repo — Edge Impulse is
+export-only.**
 
 ## Development flow (Spec-Driven Development)
 
@@ -26,5 +27,7 @@ a benchmark decides which one ships. **Source of truth is this repo — Edge Imp
 3. **Edge Impulse is one-way**: `ultron ei sync` exports data/model artifacts to EI. Never import
    EI artifacts over local ones without asking the user first.
 4. Destructive dataset/EI operations require a printed target list and explicit user confirmation.
-5. Both targets must run the **identical model flatbuffer** and identical event semantics — any
-   divergence between XIAO and Pi behavior is a bug.
+5. **Single target (owner decision, 2026-11-26): the XIAO ESP32S3 Sense.** The Orange Pi Zero 2W is
+   out of scope: there is no second runtime to keep in step, and the removed Pi code is not to be
+   reintroduced without an owner decision. Should a second target ever return, it must consume the
+   **identical model flatbuffer** and identical event semantics — divergence would be a bug.

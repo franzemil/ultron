@@ -1,5 +1,10 @@
 # Design — 003 Can Act (Milestone 3)
 
+> **Scope amendment (owner decision, 2026-11-26): the Orange Pi Zero 2W is removed from the
+> project.** Single target only (XIAO ESP32S3 Sense); Pi runtime, recorder and the
+> cross-target benchmark are deleted (specs 004/005, `devices/orangepi/`, fp16 export).
+> Pi clauses below are historical; IDs are preserved, never renumbered.
+
 ## Executive summary
 
 The XIAO ESP32S3 runs Arduino/ESP32 C++ firmware: capture → shared C MFCC (spec 001) → TFLite
@@ -9,7 +14,7 @@ clips) → **2 relay channels driven directly from XIAO pins** (LM, LB — the m
 commands are `la`, `lb`). Bring-up is staged: console-only (T12) → audio feedback + 2 direct
 relays (T14, T15). **Scope decisions (owner, 2026-11-21):** the companion ESP32-S3 SuperMini
 9-channel stack (FR-038, TD-012) and the per-command rollout live in spec 006-can-act-full; the
-Orange Pi runtime (TD-005) and cross-target parity live in spec 005 (final phase). Identical
+Orange Pi runtime (TD-005) and cross-target parity are **withdrawn** (owner, 2026-11-26). Identical
 event semantics remain the contract — AGENTS rule 5 invariant.
 
 ## Requirements mapping
@@ -97,7 +102,7 @@ any target.
 | Target | Output path | Playback |
 |---|---|---|
 | XIAO | MAX98357A I2S DAC/amp → 8 Ω speaker; I2S on D2/D3/D4 (GPIO3/4/5) — **validated on hardware 2026-11-20**; amp VIN on 5 V VBUS (Q-014 resolved) | both clips streamed from flash via I2S |
-| Pi (spec 005) | USB audio dongle → powered speaker (default ALSA device) | same clips via `sounddevice` output stream |
+| ~~Pi~~ | *(withdrawn 2026-11-26)* | — |
 
 Flash cost on XIAO: ~16 KB ("Escuchando", 500 ms) + ~10 KB ("comando", 300 ms) of 16 kHz int16
 mono — fits NFR-002 alongside the model.
@@ -106,7 +111,7 @@ mono — fits NFR-002 alongside the model.
 
 Identical event types/semantics on both targets (FR-008):
 
-| Event | XIAO serial line (115200-8N1) | Pi JSON line |
+| Event | XIAO serial line (115200-8N1) | ~~Pi JSON line~~ *(withdrawn)* |
 |---|---|---|
 | Wake | `EVT WAKE conf=0.94 t_ms=12345` | `{"event":"wake","conf":0.94,"t_ms":12345}` |
 | Command | `EVT CMD id=gd conf=0.91 t_ms=12900` | `{"event":"cmd","id":"gd","conf":0.91,"t_ms":12900}` |
@@ -129,7 +134,7 @@ steady/luz-hierarchy engine); the remaining channels and the companion ESP32-S3 
   (LA channel not wired yet — logged `DBG out=la state=unwired`, spec 006). All channels OFF at
   boot (NFR-009).
 - **Spec 006 (companion)**: the controller runs as firmware on the companion over UART.
-- **Spec 005 (Pi)**: the controller runs in-process via libgpiod.
+- ~~Spec 005 (Pi): the controller runs in-process via libgpiod.~~ *(withdrawn 2026-11-26)*
 
 | Behavior (registry enum) | Engine |
 |---|---|
@@ -226,7 +231,7 @@ EI library shell as runtime (rejected: EI is export-only); ESP-IDF rewrite (reje
 the proven arduino-cli workflow for no inference benefit). `AllOpsResolver` keeps the flatbuffer
 portable.
 
-**TD-005 — Pi runtime: Python `tflite_runtime` + `sounddevice` + ctypes DSP.** *(Runtime lands in
+**TD-005 — Pi runtime: Python `tflite_runtime` + `sounddevice` + ctypes DSP.** *(Withdrawn 2026-11-26 — Pi out of scope. Historical: runtime lands in
 spec 005, final phase — owner decision 2026-11-21.)* Alternatives: C++ runtime on the Pi
 (rejected: no benefit at 200 ms budget, kills iteration speed); full TensorFlow (fallback only
 if the aarch64 interpreter wheel is unavailable).

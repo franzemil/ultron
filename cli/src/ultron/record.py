@@ -9,7 +9,7 @@ examples exist per selected code. Writes ``{label}_local_{nn:02d}.wav`` under
 ``ultron dataset ingest`` / ``validate``.
 
 This is the host-side companion to the device recorders
-(devices/local/record.py, devices/orangepi/record.py,
+(devices/local/record.py,
 devices/esp32/wav_recorder/wav_recorder.ino) — same WAV contract, mic tag
 ``local``.
 """
